@@ -202,6 +202,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         accountId: targetAccountId,
         transferAccountId: _isTransfer ? _transferToId! : '',
         isCountedAsSpend: _isTransfer ? false : _isCountedAsSpend,
+        needsReview: false, // saving an edit confirms the transaction
       );
 
       final categoryChanged = !_isTransfer &&

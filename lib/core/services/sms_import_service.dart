@@ -89,6 +89,8 @@ class SmsImportService {
       subcategoryId: isCardPayment ? 'transfers.self' : selection.subcategoryId,
       transferAccountId: cardPayment.toCardId ?? '',
       isCountedAsSpend: !isCardPayment,
+      // Captured automatically: the user confirms it in the review inbox.
+      needsReview: true,
       note: note,
       date: txn.date,
       method: txn.accountType == AccountType.credit_card

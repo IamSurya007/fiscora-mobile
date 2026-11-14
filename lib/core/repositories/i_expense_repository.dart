@@ -30,6 +30,9 @@ abstract interface class IExpenseRepository {
   Future<void> updateExpense(Expense expense);
   Future<void> deleteExpense(String id);
 
+  /// Marks auto-captured transactions as reviewed (removes them from the inbox).
+  Future<void> approveExpenses(List<String> ids);
+
   /// Budget limits per category for [month] (format: 'yyyy-MM').
   Future<Map<String, Map<String, dynamic>>> getBudgetForMonth(String month);
   Future<void> setBudgetForMonth(

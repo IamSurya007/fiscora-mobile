@@ -11,6 +11,12 @@ final expensesStreamProvider = StreamProvider<List<Expense>>((ref) {
   return ref.watch(expenseRepositoryProvider).watchExpenses();
 });
 
+/// Auto-captured transactions waiting for the user to confirm them, newest first.
+final reviewQueueProvider = Provider<List<Expense>>((ref) {
+  final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? const [];
+  return expenses.where((e) => e.needsReview).toList();
+});
+
 /// Budget category limits — loaded from persistent key so limits carry over every month.
 final budgetProvider =
     FutureProvider<Map<String, Map<String, dynamic>>>((ref) async {
@@ -37,6 +43,10 @@ class ExpenseNotifier extends StateNotifier<AsyncValue<void>> {
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
+  }
+
+  Future<void> approveExpenses(List<String> ids) async {
+    await _repo.approveExpenses(ids);
   }
 
   Future<void> deleteExpense(String id) async {

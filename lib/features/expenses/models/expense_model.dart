@@ -35,6 +35,10 @@ class Expense {
   /// Income (amount < 0) is always counted — this flag has no effect on credits.
   final bool isCountedAsSpend;
 
+  /// Auto-captured (SMS) and not yet confirmed by the user; shown in the
+  /// review inbox until approved, edited or deleted.
+  final bool needsReview;
+
   const Expense({
     required this.id,
     required this.amount,
@@ -51,6 +55,7 @@ class Expense {
     this.transferAccountId = '',
     required this.createdAt,
     this.isCountedAsSpend = true,
+    this.needsReview = false,
   });
 
   factory Expense.fromJson(
@@ -100,6 +105,7 @@ class Expense {
       transferAccountId: json['transferAccountId'] as String? ?? '',
       createdAt: parseDate(json['createdAt']),
       isCountedAsSpend: parsedCountAsSpend ?? defaultIsCountedAsSpend ?? true,
+      needsReview: json['needsReview'] as bool? ?? false,
     );
   }
 
@@ -118,6 +124,7 @@ class Expense {
         'transferAccountId': transferAccountId,
         'createdAt': Timestamp.fromDate(createdAt),
         'isCountedAsSpend': isCountedAsSpend,
+        'needsReview': needsReview,
       };
 
   Expense copyWith({
@@ -136,6 +143,7 @@ class Expense {
     String? transferAccountId,
     DateTime? createdAt,
     bool? isCountedAsSpend,
+    bool? needsReview,
   }) {
     return Expense(
       id: id ?? this.id,
@@ -153,6 +161,7 @@ class Expense {
       transferAccountId: transferAccountId ?? this.transferAccountId,
       createdAt: createdAt ?? this.createdAt,
       isCountedAsSpend: isCountedAsSpend ?? this.isCountedAsSpend,
+      needsReview: needsReview ?? this.needsReview,
     );
   }
 }

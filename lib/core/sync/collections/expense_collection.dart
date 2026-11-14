@@ -23,6 +23,7 @@ class ExpenseCollection with SyncMetadataMixin {
   String transferAccountId = '';
   late DateTime createdAt;
   bool isCountedAsSpend = true;
+  bool needsReview = false;
 
   ExpenseCollection();
 
@@ -49,7 +50,8 @@ class ExpenseCollection with SyncMetadataMixin {
       ..accountId = expense.accountId
       ..transferAccountId = expense.transferAccountId
       ..createdAt = expense.createdAt
-      ..isCountedAsSpend = expense.isCountedAsSpend;
+      ..isCountedAsSpend = expense.isCountedAsSpend
+      ..needsReview = expense.needsReview;
 
     col.clientId = expense.id;
     col.serverId = serverId;
@@ -83,6 +85,7 @@ class ExpenseCollection with SyncMetadataMixin {
       transferAccountId: transferAccountId,
       createdAt: createdAt,
       isCountedAsSpend: isCountedAsSpend,
+      needsReview: needsReview,
     );
   }
 
@@ -103,6 +106,7 @@ class ExpenseCollection with SyncMetadataMixin {
       'createdAt': createdAt.toUtc().toIso8601String(),
       'isCountedAsSpend': isCountedAsSpend,
       'is_counted_as_spend': isCountedAsSpend,
+      'needsReview': needsReview,
     };
   }
 }

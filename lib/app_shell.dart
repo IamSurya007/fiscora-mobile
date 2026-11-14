@@ -13,6 +13,7 @@ import 'features/expenses/screens/expenses_screen.dart';
 import 'features/loans/screens/loans_screen.dart';
 import 'features/investments/screens/investments_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
+import 'features/expenses/screens/review_inbox_screen.dart';
 
 /// Top-level authenticated shell — holds the floating nav + 5 screens.
 /// Nav index → page:
@@ -85,7 +86,7 @@ class _AppShellState extends ConsumerState<AppShell>
       if (mounted && saved > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('⚡ $saved new transactions synced'),
+            content: Text('⚡ $saved new transactions to review'),
             backgroundColor: AppColors.primaryNavy,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 5),
@@ -98,7 +99,7 @@ class _AppShellState extends ConsumerState<AppShell>
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ExpensesScreen()),
+                  MaterialPageRoute(builder: (_) => const ReviewInboxScreen()),
                 );
               },
             ),

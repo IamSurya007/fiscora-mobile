@@ -125,6 +125,31 @@ class IsarExpenseRepository implements IExpenseRepository {
   }
 
   @override
+  Future<void> approveExpenses(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await _isar.writeAsync((isar) {
+      for (final id in ids) {
+        final col = isar.expenseCollections.where().clientIdEqualTo(id).findFirst();
+        if (col == null || !col.needsReview || col.isDeleted) continue;
+        col
+          ..needsReview = false
+          ..dirty = true
+          ..syncStatus = col.serverId == null ? SyncStatus.pendingCreate.name : SyncStatus.pendingUpdate.name
+          ..updatedAt = DateTime.now().toUtc();
+        isar.expenseCollections.put(col);
+        SyncEngine.enqueue(
+          isar: isar,
+          entityType: 'expense',
+          clientId: id,
+          operationType: col.serverId == null ? 'create' : 'update',
+          payload: col.toSyncJson(),
+        );
+      }
+    });
+    SyncEngine.instance.triggerSync();
+  }
+
+  @override
   Future<void> deleteExpense(String id) async {
     await _isar.writeAsync((isar) {
       final existing = isar.expenseCollections
@@ -392,6 +417,8 @@ class IsarExpenseRepository implements IExpenseRepository {
           ..subcategoryId = r.sub?.id ?? ''
           ..category = r.parent.name
           ..subcategory = r.sub?.name ?? ''
+          // "Apply to similar" is a review decision for every matching capture.
+          ..needsReview = false
           ..dirty = true
           ..syncStatus = exp.serverId == null ? SyncStatus.pendingCreate.name : SyncStatus.pendingUpdate.name
           ..updatedAt = DateTime.now().toUtc();
