@@ -52,7 +52,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned to the version the app is developed and tested with. Newer
+          # stable releases make IconData final, which breaks phosphor_flutter 2.1.0.
           channel: 'stable'
+          flutter-version: '3.41.4'
           cache: true
 
       - name: Install dependencies
