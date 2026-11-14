@@ -54,6 +54,11 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
   DateTime _selectedDate = DateTime.now();
   bool _isSaving = false;
   bool _isCredit = false;
+
+  /// Transfer between two of your own accounts (e.g. paying the card bill from
+  /// savings). Neither spend nor income; moves money from one account to another.
+  bool _isTransfer = false;
+  String? _transferToId;
   bool _isCountedAsSpend = true;
 
   final List<String> _methods = ['cash', 'upi', 'card'];
@@ -77,6 +82,8 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       _selectedDate = exp.date;
       _selectedMethod = _methods.contains(exp.method.toLowerCase()) ? exp.method.toLowerCase() : 'upi';
       _isCredit = exp.amount < 0;
+      _isTransfer = exp.transferAccountId.isNotEmpty;
+      _transferToId = _isTransfer ? exp.transferAccountId : null;
       _isCountedAsSpend = exp.isCountedAsSpend;
     } else {
       if (widget.prefilledAmount != null && widget.prefilledAmount! > 0) {
@@ -147,9 +154,19 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       return;
     }
 
+    final shownForTransfer = ref.read(accountsStreamProvider).valueOrNull ?? const [];
+    final fromForTransfer =
+        _selectedAccountId ?? (shownForTransfer.isNotEmpty ? shownForTransfer.first.id : 'default_bank');
+    if (_isTransfer && (_transferToId == null || _transferToId == fromForTransfer)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick a different account to transfer to')),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
 
-    final savedAmount = _isCredit ? -amount : amount;
+    final savedAmount = (_isCredit && !_isTransfer) ? -amount : amount;
     final cleanMerchant = _merchantController.text.trim();
     final expenseNotifier = ref.read(expenseNotifierProvider.notifier);
     // Save to the account the picker shows as selected (its first account by default).
@@ -166,6 +183,9 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       selection = rule ?? MerchantCategorizer.categorize(cleanMerchant);
     }
     selection ??= CategoryResolver.defaultFor(isCredit: _isCredit);
+    if (_isTransfer) {
+      selection = const CategorySelection('transfers', 'transfers.self');
+    }
     final label = registry.label(selection.categoryId, selection.subcategoryId, isCredit: _isCredit);
 
     final oldExpense = widget.expense;
@@ -180,10 +200,12 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         method: _selectedMethod,
         merchant: cleanMerchant,
         accountId: targetAccountId,
-        isCountedAsSpend: _isCountedAsSpend,
+        transferAccountId: _isTransfer ? _transferToId! : '',
+        isCountedAsSpend: _isTransfer ? false : _isCountedAsSpend,
       );
 
-      final categoryChanged = _selection != null &&
+      final categoryChanged = !_isTransfer &&
+          _selection != null &&
           (oldExpense.categoryId != selection.categoryId ||
               oldExpense.subcategoryId != selection.subcategoryId);
       bool applyToAll = false;
@@ -259,12 +281,13 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         method: _selectedMethod,
         merchant: cleanMerchant,
         accountId: targetAccountId,
+        transferAccountId: _isTransfer ? _transferToId! : '',
         createdAt: DateTime.now(),
-        isCountedAsSpend: _isCountedAsSpend,
+        isCountedAsSpend: _isTransfer ? false : _isCountedAsSpend,
       );
 
       // Remember an explicit choice for this merchant (not a guess).
-      if (cleanMerchant.isNotEmpty && _selection != null) {
+      if (!_isTransfer && cleanMerchant.isNotEmpty && _selection != null) {
         expenseNotifier.setMerchantRule(cleanMerchant, selection);
       }
 
@@ -353,9 +376,11 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                widget.expense != null
-                    ? (_isCredit ? 'Edit Income' : 'Edit Transaction')
-                    : (_isCredit ? 'Add Income' : 'Add Expense'),
+                _isTransfer
+                    ? (widget.expense != null ? 'Edit Transfer' : 'Add Transfer')
+                    : widget.expense != null
+                        ? (_isCredit ? 'Edit Income' : 'Edit Transaction')
+                        : (_isCredit ? 'Add Income' : 'Add Expense'),
                 style: AppTextStyles.h2,
               ),
               Container(
@@ -366,8 +391,9 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
                 padding: const EdgeInsets.all(2),
                 child: Row(
                   children: [
-                    _typeTab(label: 'Expense', isSelected: !_isCredit, isCredit: false),
-                    _typeTab(label: 'Income', isSelected: _isCredit, isCredit: true),
+                    _typeTab(label: 'Expense', isSelected: !_isCredit && !_isTransfer, isCredit: false),
+                    _typeTab(label: 'Income', isSelected: _isCredit && !_isTransfer, isCredit: true),
+                    _transferTab(),
                   ],
                 ),
               ),
@@ -428,7 +454,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
           const SizedBox(height: AppSpacing.md),
 
           // Account Selector
-          Text('Account', style: AppTextStyles.label),
+          Text(_isTransfer ? 'From' : 'Account', style: AppTextStyles.label),
           const SizedBox(height: AppSpacing.xs),
           Consumer(
             builder: (context, ref, child) {
@@ -487,6 +513,14 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
           ),
           const SizedBox(height: AppSpacing.md),
 
+          if (_isTransfer) ...[
+            Text('To', style: AppTextStyles.label),
+            const SizedBox(height: AppSpacing.xs),
+            _transferTargetChips(),
+            const SizedBox(height: AppSpacing.md),
+          ],
+
+          if (!_isTransfer) ...[
           // Category Selection (Optional — defaults to Miscellaneous / Income)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -567,6 +601,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
+          ],
 
           // Merchant + Note row
           Row(
@@ -665,6 +700,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
 
           const SizedBox(height: AppSpacing.md),
 
+          if (!_isTransfer)
           // ── Spend / Income classification toggle ──────────────
           Container(
             padding: const EdgeInsets.symmetric(
@@ -762,11 +798,63 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
     );
   }
 
+  Widget _transferTab() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _isTransfer = true;
+        _isCredit = false;
+        _selection = null;
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: _isTransfer ? AppColors.primaryNavy : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          'Transfer',
+          style: AppTextStyles.caption.copyWith(
+            color: _isTransfer ? Colors.white : AppColors.mutedText,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// "To" account chips for a transfer; the "From" account is not offered.
+  Widget _transferTargetChips() {
+    return Consumer(
+      builder: (context, ref, child) {
+        final accounts = ref.watch(accountsStreamProvider).valueOrNull ?? const [];
+        final fromId = _selectedAccountId ?? (accounts.isNotEmpty ? accounts.first.id : null);
+        final targets = accounts.where((a) => a.id != fromId).toList();
+        if (targets.isEmpty) {
+          return Text('Add another account to record a transfer.', style: AppTextStyles.caption);
+        }
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final acc in targets)
+              ChoiceChip(
+                label: Text(acc.name),
+                avatar: Icon(acc.type.icon, size: 16),
+                selected: _transferToId == acc.id,
+                onSelected: (_) => setState(() => _transferToId = acc.id),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _typeTab({required String label, required bool isSelected, required bool isCredit}) {
     return GestureDetector(
       onTap: () {
         setState(() {
           _isCredit = isCredit;
+          _isTransfer = false;
           // An expense category makes no sense on income and vice versa.
           final sel = _selection;
           if (sel != null) {
