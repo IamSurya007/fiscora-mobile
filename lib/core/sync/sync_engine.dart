@@ -100,7 +100,21 @@ class SyncEngine {
     return IsarDatabase.instance.isar.outboxOperations.where().count();
   }
 
+  bool _suspended = false;
+
+  /// Stops new sync cycles and waits for a running one to finish. Used on
+  /// sign-out so a debounced sync can't refill the wiped database with the
+  /// previous user's data.
+  Future<void> suspend() async {
+    _suspended = true;
+    _debounceTimer?.cancel();
+    if (_currentSync != null) await _currentSync!.future;
+  }
+
+  void resume() => _suspended = false;
+
   Future<bool> _runExclusive({required bool forcePull}) async {
+    if (_suspended) return false;
     if (_currentSync != null) return _currentSync!.future;
     final completer = Completer<bool>();
     _currentSync = completer;
@@ -121,6 +135,7 @@ class SyncEngine {
 
   /// Returns false if any pull failed (e.g. offline).
   Future<bool> runSyncCycle({bool forcePull = false}) async {
+    await _requeueOrphanedInFlight();
     bool hasPendingWork = true;
     int maxCycles = 5;
     int cycles = 0;
@@ -167,6 +182,24 @@ class SyncEngine {
     final delaySecs = (base * (1 << attemptCount)).clamp(base, maxDelay);
     final jitter = DateTime.now().millisecond % 5;
     return DateTime.now().toUtc().add(Duration(seconds: delaySecs + jitter));
+  }
+
+  /// Cycles never overlap, so an op still marked inFlight when a cycle starts
+  /// was abandoned (app killed mid-push). Re-queue it; the server dedupes
+  /// replayed creates by clientId.
+  Future<void> _requeueOrphanedInFlight() async {
+    final isar = IsarDatabase.instance.isar;
+    final orphaned = await isar.outboxOperations
+        .where()
+        .outboxStatusEqualTo(OutboxStatus.inFlight.name)
+        .findAll();
+    if (orphaned.isEmpty) return;
+    isar.write((isar) {
+      for (final op in orphaned) {
+        op.outboxStatus = OutboxStatus.queued.name;
+        isar.outboxOperations.put(op);
+      }
+    });
   }
 
   // Push pending outbox mutations in FIFO order per entity type

@@ -120,6 +120,7 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
         interestRate: interestRate,
         repaymentDate: _repaymentDate,
         createdAt: _startDate,
+        notes: _notesController.text.trim(),
       );
       ref.read(loanNotifierProvider.notifier).updateLoan(updatedLoan);
     } else {

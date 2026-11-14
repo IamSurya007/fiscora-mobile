@@ -9,6 +9,12 @@ import 'core/services/seed_service.dart';
 import 'core/sync/sync_engine.dart';
 import 'features/categories/services/category_providers.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
+import 'features/auth/data/repository/auth_repository_impl.dart';
+import 'features/ai_chat/providers/rag_chat_provider.dart';
+import 'core/sync/isar_database.dart';
+import 'core/sync/collections/user_profile_collection.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:isar_plus/isar_plus.dart';
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -50,6 +56,39 @@ void resetAuthSetup() {
   _AuthenticatedAppState._completedSetupUid = null;
 }
 
+/// Drops in-memory per-user state (AI chat and its history).
+void _resetUserScopedProviders(WidgetRef ref) {
+  ref.invalidate(ragChatNotifierProvider);
+  ref.invalidate(chatHistoryProvider);
+}
+
+/// Signs out and wipes everything this device holds for the user. Sync is
+/// suspended first so a pending debounced sync can't repopulate the database.
+Future<void> signOutAndClearLocalData(WidgetRef ref) async {
+  resetAuthSetup();
+  try {
+    await SyncEngine.instance.suspend();
+  } on StateError {
+    // Sync engine never initialised; nothing to stop.
+  }
+  await IsarDatabase.clearAll();
+  _resetUserScopedProviders(ref);
+  await AuthRepositoryImpl().signOut();
+}
+
+/// The local database is not partitioned by user. If it holds another
+/// account's profile (the session ended without the Profile sign-out, e.g. a
+/// revoked token), wipe it so this user never sees, or uploads, that data.
+Future<void> _wipeIfOwnedByAnotherUser(String uid) async {
+  final isar = IsarDatabase.instance.isar;
+  final others = await isar.userProfileCollections
+      .where()
+      .not()
+      .uidEqualTo(uid)
+      .count();
+  if (others > 0) await IsarDatabase.clearAll();
+}
+
 class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
   late bool _ready;
   static String? _completedSetupUid;
@@ -66,8 +105,26 @@ class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
   }
 
   Future<void> _setup() async {
-    // Force a token refresh so Auth API client has a valid token
-    await widget.user.getIdToken();
+    try {
+      await _runSetup();
+    } catch (e, st) {
+      // Never leave an offline-first app stuck on the splash screen.
+      debugPrint('Post-auth setup failed: $e\n$st');
+    }
+    _completedSetupUid = widget.user.uid;
+    if (mounted) setState(() => _ready = true);
+  }
+
+  Future<void> _runSetup() async {
+    // Refresh the token for the API client; offline launches continue without it.
+    try {
+      await widget.user.getIdToken();
+    } catch (e) {
+      debugPrint('Token refresh failed (offline?): $e');
+    }
+
+    await _wipeIfOwnedByAnotherUser(widget.user.uid);
+    _resetUserScopedProviders(ref);
 
     // Read repos via Riverpod — injected through repository_providers.dart.
     final userRepo = ref.read(userRepositoryProvider);
@@ -86,6 +143,7 @@ class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
     // Initialize Sync Engine
     final syncClient = ref.read(syncApiClientProvider);
     SyncEngine.init(syncClient);
+    SyncEngine.instance.resume();
 
     // Give records that only carry an old category name their category ids.
     // Idempotent and cheap once done.
@@ -101,9 +159,6 @@ class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
     
     // Trigger initial pull/push sync in background
     SyncEngine.instance.triggerSync();
-
-    _completedSetupUid = widget.user.uid;
-    if (mounted) setState(() => _ready = true);
   }
 
   @override

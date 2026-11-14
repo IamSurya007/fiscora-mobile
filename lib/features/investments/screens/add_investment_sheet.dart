@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +9,30 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../models/investment_model.dart';
 import '../services/investment_providers.dart';
+
+/// SIP/MF: monthly compounding, contributions at the start of each month.
+/// RD: the simple-interest approximation banks quote for monthly deposits.
+double investmentMaturityValue({
+  required String type,
+  required double monthly,
+  required int months,
+  required double annualRatePct,
+}) {
+  if (monthly <= 0 || months <= 0) return 0;
+  final r = annualRatePct / (12 * 100);
+  if (r == 0) return monthly * months;
+  if (type == 'SIP' || type == 'MF') {
+    return monthly * ((math.pow(1 + r, months) - 1) / r) * (1 + r);
+  }
+  return monthly * months * (1 + r * (months + 1) / 2);
+}
+
+/// Adds months without rolling over: 31 Jan + 1 month = 28/29 Feb, not 3 Mar.
+DateTime addMonthsClamped(DateTime d, int months) {
+  final target = DateTime(d.year, d.month + months, 1);
+  final lastDay = DateTime(target.year, target.month + 1, 0).day;
+  return DateTime(target.year, target.month, d.day > lastDay ? lastDay : d.day);
+}
 
 class AddInvestmentSheet extends ConsumerStatefulWidget {
   final Investment? investment;
@@ -69,10 +95,7 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
     final months = int.tryParse(_durationController.text) ?? 0;
     final rate = double.tryParse(_rateController.text) ?? 7.0;
     if (monthly <= 0 || months <= 0) return 0;
-    // Simple RD maturity formula
-    final r = rate / (12 * 100);
-    final maturity = monthly * months * (1 + r * (months + 1) / 2);
-    return maturity;
+    return investmentMaturityValue(type: _type, monthly: monthly, months: months, annualRatePct: rate);
   }
 
   Future<void> _pickStartDate() async {
@@ -106,11 +129,7 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
     final duration = int.tryParse(durationText) ?? 0;
     final principal = monthly * duration;
     final maturity = _calcMaturity();
-    final maturityDate = DateTime(
-      _startDate.year,
-      _startDate.month + duration,
-      _startDate.day,
-    );
+    final maturityDate = addMonthsClamped(_startDate, duration);
 
     Navigator.pop(context);
 

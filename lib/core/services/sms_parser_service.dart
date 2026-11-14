@@ -155,6 +155,8 @@ class SmsParserService {
         final List<ParsedSms> results = [];
         for (final item in pendingList) {
           if (item is Map) {
+            final id = item['id'];
+            if (id is String) _fetchedPendingIds.add(id);
             final parsed = _parsePlatformMap(item);
             if (parsed != null) {
               results.add(parsed);
@@ -172,9 +174,17 @@ class SmsParserService {
     return [];
   }
 
+  /// Ids of queued items returned by [getPendingTransactions] and not yet acknowledged.
+  final Set<String> _fetchedPendingIds = {};
+
+  /// Removes only the queued items this service has already fetched, so an SMS
+  /// captured while the batch was being saved stays queued for the next run.
   Future<void> clearPendingTransactions() async {
+    if (_fetchedPendingIds.isEmpty) return;
+    final ids = _fetchedPendingIds.toList();
     try {
-      await _channel.invokeMethod('clearPendingTransactions');
+      await _channel.invokeMethod('removePendingTransactions', {'ids': ids});
+      _fetchedPendingIds.removeAll(ids);
     } catch (_) {}
   }
 
@@ -210,23 +220,10 @@ class SmsParserService {
     final body = map['body'] as String? ?? '';
     final sender = map['sender'] as String? ?? '';
 
+    // The Dart parser is the source of truth: if it rejects the body (OTP, declined,
+    // promo), the native receiver's looser guess is not saved either.
     final parsed = parseSmsBody(body, date, sender: sender);
-    if (parsed != null) {
-      return parsed.withSource(sender: sender, sentAtMs: sentAtMs);
-    }
-    return ParsedSms(
-          amount: amount,
-          merchant: map['merchant'] as String? ?? 'Unknown Merchant',
-          account: 'SMS Account',
-          bankName: 'Bank',
-          accountSnippet: '',
-          accountType: AccountType.bank_account,
-          isDebit: map['isDebit'] as bool? ?? true,
-          date: date,
-          body: body,
-          sender: sender,
-          sentAtMs: sentAtMs,
-        );
+    return parsed?.withSource(sender: sender, sentAtMs: sentAtMs);
   }
 
   static String detectBankName(String sender, String body) {
@@ -279,6 +276,60 @@ class SmsParserService {
     return AccountType.bank_account;
   }
 
+  static const _nonTransactionPhrases = [
+    'declined', 'has failed', 'transaction failed', 'unsuccessful',
+    'could not be processed', 'will be debited', 'will be deducted', 'is due on',
+    'payment due', 'minimum amount due', 'total amount due', 'has requested',
+    'collect request', 'is scheduled',
+  ];
+  static final _otp = RegExp(r'\b(?:otp|one[ -]time password|verification code)\b');
+
+  /// OTPs, declined/failed payments and reminders about future debits.
+  static bool isNonTransaction(String lower) =>
+      _otp.hasMatch(lower) || _nonTransactionPhrases.any(lower.contains);
+
+  static RegExp _words(List<String> w) => RegExp('\\b(?:${w.map(RegExp.escape).join('|')})\\b');
+  static final _strongDebit = _words(['debited', 'debit of']);
+  static final _strongCredit = _words(['credited', 'credit of']);
+  static final _creditHints = _words(['refund', 'refunded', 'reversed', 'reversal', 'cashback', 'received', 'deposited']);
+  static final _debitHints = _words([
+    'sent', 'paid', 'spent', 'charged', 'withdrawn', 'withdrawal', 'transferred', 'txnd',
+    'txn of', 'purchase of', 'payment of', 'transfer to', 'used at',
+  ]);
+
+  /// true = debit, false = credit, null = no transaction verb.
+  /// "debited"/"credited" decide first (earliest wins when both appear, e.g.
+  /// "debited from A/c X and credited to Y"). Otherwise refunds and receipts win
+  /// over weaker debit words, so "refund for your payment of" and a card bill's
+  /// "payment of Rs X received" are credits. Words match whole, so "prepaid" ≠ "paid".
+  static bool? detectDirection(String lower) {
+    final d = _strongDebit.firstMatch(lower);
+    final c = _strongCredit.firstMatch(lower);
+    if (d != null && c != null) return d.start < c.start;
+    if (d != null) return true;
+    if (c != null) return false;
+    if (_creditHints.hasMatch(lower)) return false;
+    if (_debitHints.hasMatch(lower)) return true;
+    return null;
+  }
+
+  static final _amount = RegExp(
+    r'(?:rs|inr|rupees?|₹)\.?\s*:?\s*([0-9][0-9,]*(?:\.[0-9]+)?)|([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:rs\.?|inr|rupees?|₹|/-)',
+    caseSensitive: false,
+  );
+  static final _balanceLabel = RegExp(r'(?:bal(?:ance)?|limit|lmt)[^0-9]{0,12}$', caseSensitive: false);
+
+  /// First amount not labelled as a balance or limit ("Avl Bal Rs 10,000").
+  static double? extractTransactionAmount(String body) {
+    for (final m in _amount.allMatches(body)) {
+      final before = body.substring(m.start < 20 ? 0 : m.start - 20, m.start);
+      if (_balanceLabel.hasMatch(before)) continue;
+      final value = double.tryParse((m.group(1) ?? m.group(2) ?? '').replaceAll(',', ''));
+      if (value != null && value > 0) return value;
+    }
+    return null;
+  }
+
   static ParsedSms? parseSmsBody(String body, DateTime smsTime, {String sender = ''}) {
     final cleanBody = body.toLowerCase();
 
@@ -291,67 +342,36 @@ class SmsParserService {
       'download the app to claim', 'buy now pay later', 'flat % off',
     ];
     if (promoSpamKeywords.any((k) => cleanBody.contains(k))) return null;
+    if (isNonTransaction(cleanBody)) return null;
 
     // 2. Debit / Credit Direction Check
-    final isDebit = cleanBody.contains('debited') ||
-        cleanBody.contains('sent') ||
-        cleanBody.contains('paid') ||
-        cleanBody.contains('spent') ||
-        cleanBody.contains('charged') ||
-        cleanBody.contains('withdrawn') ||
-        cleanBody.contains('transferred') ||
-        cleanBody.contains('txnd') ||
-        cleanBody.contains('txn of') ||
-        cleanBody.contains('purchase of') ||
-        cleanBody.contains('payment of') ||
-        cleanBody.contains('transfer to') ||
-        cleanBody.contains('used at') ||
-        cleanBody.contains('drawn');
+    final debit = detectDirection(cleanBody);
+    if (debit == null) return null;
 
-    final isCredit = cleanBody.contains('credited') ||
-        cleanBody.contains('received') ||
-        cleanBody.contains('deposited') ||
-        cleanBody.contains('refunded') ||
-        cleanBody.contains('added') ||
-        cleanBody.contains('cashback of');
+    // 3. Amount Extraction, skipping balances and limits
+    final amount = extractTransactionAmount(body);
+    if (amount == null) return null;
 
-    if (!isDebit && !isCredit) return null;
-
-    // 3. Amount Extraction (supports Rs, Rs., INR, Rupees, ₹, e.g. Rs 500 or 500 INR)
-    final amountRegex = RegExp(
-      r'(?:rs\.?|inr|rupees?|₹)\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:rs\.?|inr|rupees?|₹|/-)',
+    // 4. Extract Merchant Name: try every "to/at/..." keyword, not just the first
+    String merchant = 'Unknown Merchant';
+    final merchantKeyword = RegExp(r'\b(?:to|at|towards|via|spent on|paid to)\s+', caseSensitive: false);
+    final merchantTail = RegExp(
+      r'([a-zA-Z0-9\s\.\-\*@]+?)(?:\s+on\b|\s+ref|\s+via\b|\s+from\b|\s+bal|\s+avl|\.|$)',
       caseSensitive: false,
     );
-    final amountMatch = amountRegex.firstMatch(body);
-    if (amountMatch == null) return null;
-
-    final amountStr = (amountMatch.group(1) ?? amountMatch.group(2))?.replaceAll(',', '') ?? '';
-    final amount = double.tryParse(amountStr);
-    if (amount == null || amount <= 0) return null;
-
-    final debit = isDebit || !isCredit;
-
-    // 4. Extract Merchant Name (words after "to", "at", "towards", "via", "spent on", or "info:")
-    String merchant = 'Unknown Merchant';
-    final toAtPatterns = [
-      RegExp(
-        r'(?:to|at|towards|via|spent on|paid to)\s+([a-zA-Z0-9\s\.\-\*@]+?)(?:\s+on|\s+ref|\s+via|\s+from|\s+bal|\s+avl|\.|$)',
-        caseSensitive: false,
-      ),
-      RegExp(
-        r'(?:info:?|vpa:?|merchant:?)\s*([a-zA-Z0-9\s\.\-\*@]+?)(?:\s+on|\s+ref|\.|$)',
-        caseSensitive: false,
-      ),
+    final infoPattern = RegExp(
+      r'\b(?:info:?|vpa:?|merchant:?)\s*([a-zA-Z0-9\s\.\-\*@]+?)(?:\s+on\b|\s+ref|\.|$)',
+      caseSensitive: false,
+    );
+    final candidates = <String?>[
+      for (final k in merchantKeyword.allMatches(body)) merchantTail.matchAsPrefix(body, k.end)?.group(1),
+      for (final m in infoPattern.allMatches(body)) m.group(1),
     ];
-
-    for (final pattern in toAtPatterns) {
-      final match = pattern.firstMatch(body);
-      if (match != null) {
-        final name = match.group(1)?.trim();
-        if (name != null && name.isNotEmpty && name.length < 30) {
-          merchant = _cleanMerchantName(name);
-          break;
-        }
+    for (final raw in candidates) {
+      final name = raw?.trim();
+      if (name != null && name.isNotEmpty && name.length < 30) {
+        merchant = _cleanMerchantName(name);
+        break;
       }
     }
 

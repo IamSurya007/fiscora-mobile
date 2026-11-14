@@ -133,7 +133,10 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
     final savedAmount = _isCredit ? -amount : amount;
     final cleanMerchant = _merchantController.text.trim();
     final expenseNotifier = ref.read(expenseNotifierProvider.notifier);
-    final targetAccountId = _selectedAccountId ?? 'default_bank';
+    // Save to the account the picker shows as selected (its first account by default).
+    final shownAccounts = ref.read(accountsStreamProvider).valueOrNull ?? const [];
+    final targetAccountId =
+        _selectedAccountId ?? (shownAccounts.isNotEmpty ? shownAccounts.first.id : 'default_bank');
     final registry = ref.read(categoryRegistryProvider);
 
     // No explicit choice: merchant rule, then keyword guess, then default.

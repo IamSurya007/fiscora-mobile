@@ -8,14 +8,12 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/services/excel_export_service.dart';
-import '../../../features/auth/data/repository/auth_repository_impl.dart';
 import '../../../features/expenses/services/expense_providers.dart';
 import '../../../features/loans/services/loan_providers.dart';
 import '../../../features/investments/services/investment_providers.dart';
 import '../../../splash_screen.dart';
 import '../../auth/presentation/screens/conflict_resolution_screen.dart';
 import '../../categories/screens/manage_categories_screen.dart';
-import '../../../core/sync/isar_database.dart';
 import '../../../core/sync/sync_engine.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -165,9 +163,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (discard != true) return;
     }
 
-    resetAuthSetup();
-    await IsarDatabase.clearAll();
-    await AuthRepositoryImpl().signOut();
+    await signOutAndClearLocalData(ref);
   }
 
   @override
