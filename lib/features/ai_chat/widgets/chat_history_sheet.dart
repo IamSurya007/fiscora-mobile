@@ -150,7 +150,7 @@ class _ChatHistorySheetState extends ConsumerState<ChatHistorySheet> {
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.xl),
                           child: Text(
-                            'No saved chats yet.\nYour conversations with Spendly AI will appear here.',
+                            'No saved chats yet.\nYour conversations with Fiscora AI will appear here.',
                             textAlign: TextAlign.center,
                             style: AppTextStyles.bodyMedium.copyWith(color: AppColors.mutedText),
                           ),

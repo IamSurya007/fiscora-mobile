@@ -121,7 +121,7 @@ class _SpendlyAiChatScreenState extends ConsumerState<SpendlyAiChatScreen>
                   Row(
                     children: [
                       Text(
-                        'Spendly AI Assistant',
+                        'Fiscora AI Assistant',
                         style: AppTextStyles.h3.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
@@ -144,7 +144,7 @@ class _SpendlyAiChatScreenState extends ConsumerState<SpendlyAiChatScreen>
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          chatState.title ?? 'Powered by Spendly RAG & Gemini',
+                          chatState.title ?? 'Answers from your Fiscora data',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTextStyles.caption.copyWith(
@@ -272,7 +272,7 @@ class _SpendlyAiChatScreenState extends ConsumerState<SpendlyAiChatScreen>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Welcome to Spendly AI',
+                  'Welcome to Fiscora AI',
                   style: AppTextStyles.h2.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
@@ -401,7 +401,7 @@ class _SpendlyAiChatScreenState extends ConsumerState<SpendlyAiChatScreen>
                   color: AppColors.primaryNavy,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Ask Spendly AI...',
+                  hintText: 'Ask Fiscora AI...',
                   hintStyle: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.mutedText,
                   ),
@@ -537,7 +537,7 @@ class _ChatMessageBubble extends StatelessWidget {
                       const Icon(Icons.auto_awesome_rounded, color: Color(0xFF3D7FE8), size: 14),
                       const SizedBox(width: 4),
                       Text(
-                        'Spendly AI',
+                        'Fiscora AI',
                         style: AppTextStyles.caption.copyWith(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -582,6 +582,9 @@ class _ChatMessageBubble extends StatelessWidget {
                         MarkdownBody(
                           data: message.text,
                           selectable: true,
+                          // Never auto-load remote images from model output: an
+                          // injected ![](https://...?data=...) would leak data.
+                          imageBuilder: (uri, title, alt) => const SizedBox.shrink(),
                           styleSheet: MarkdownStyleSheet(
                             p: AppTextStyles.bodyMedium.copyWith(
                               color: const Color(0xFFE2E8F0),

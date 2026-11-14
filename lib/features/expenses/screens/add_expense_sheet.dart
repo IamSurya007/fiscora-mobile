@@ -16,6 +16,7 @@ import '../../categories/widgets/category_icon.dart';
 import '../../categories/widgets/category_picker_sheet.dart';
 import '../models/expense_model.dart';
 import '../services/expense_providers.dart';
+import '../../accounts/models/account_model.dart';
 
 class AddExpenseSheet extends ConsumerStatefulWidget {
   final Expense? expense;
@@ -94,7 +95,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       if (widget.prefilledMethod != null && _methods.contains(widget.prefilledMethod!.toLowerCase())) {
         _selectedMethod = widget.prefilledMethod!.toLowerCase();
         if (_selectedMethod == 'cash') {
-          _selectedAccountId = 'default_cash';
+          _selectedAccountId = _cashAccountId;
         }
       }
       if (widget.prefilledIsCredit != null) {
@@ -114,6 +115,24 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
     _merchantController.dispose();
     _amountFocus.dispose();
     super.dispose();
+  }
+
+  static const _cashAccountId = 'default_cash';
+
+  /// "Cash Spend" saves to [_cashAccountId], which used to be referenced but
+  /// never created, so cash spends changed no balance and showed under no
+  /// account. Create it on first use.
+  Future<void> _ensureCashAccount() async {
+    final repo = ref.read(accountRepositoryProvider);
+    if (await repo.getAccount(_cashAccountId) != null) return;
+    await repo.addAccount(Account(
+      id: _cashAccountId,
+      name: 'Cash',
+      type: AccountType.cash,
+      currentBalance: 0,
+      colorValue: 0xFF22C55E,
+      createdAt: DateTime.now(),
+    ));
   }
 
   Future<void> _save() async {
@@ -137,6 +156,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
     final shownAccounts = ref.read(accountsStreamProvider).valueOrNull ?? const [];
     final targetAccountId =
         _selectedAccountId ?? (shownAccounts.isNotEmpty ? shownAccounts.first.id : 'default_bank');
+    if (targetAccountId == _cashAccountId) await _ensureCashAccount();
     final registry = ref.read(categoryRegistryProvider);
 
     // No explicit choice: merchant rule, then keyword guess, then default.

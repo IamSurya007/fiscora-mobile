@@ -14,6 +14,7 @@ import '../../categories/widgets/category_icon.dart';
 import '../../expenses/models/expense_model.dart';
 import '../../expenses/services/expense_providers.dart';
 import 'add_expense_sheet.dart';
+import '../models/ledger_rules.dart';
 
 class ExpensesScreen extends ConsumerStatefulWidget {
   const ExpensesScreen({super.key});
@@ -100,7 +101,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     final spent = <String, double>{};
     final spentBySub = <String, Map<String, double>>{};
     for (final e in monthExpenses) {
-      if (e.amount > 0 && e.isCountedAsSpend) {
+      if (e.countsAsSpend) {
         spent[e.categoryId] = (spent[e.categoryId] ?? 0) + e.amount;
         if (e.subcategoryId.isNotEmpty) {
           final subs = spentBySub.putIfAbsent(e.categoryId, () => {});
@@ -112,7 +113,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     final totalBudgeted = budget.values
         .fold(0.0, (s, v) => s + ((v['limit'] as num?)?.toDouble() ?? 0.0));
     final totalSpent =
-        monthExpenses.where((e) => e.amount > 0 && e.isCountedAsSpend).fold(
+        monthExpenses.where((e) => e.countsAsSpend).fold(
               0.0,
               (s, e) => s + e.amount,
             );
@@ -485,7 +486,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
                       ),
                     const SizedBox(width: 12),
                     Text(
-                      '₹${NumberFormat('#,##,###').format(monthExpenses.where((e) => e.amount > 0 && e.isCountedAsSpend).fold(0.0, (s, e) => s + e.amount))}',
+                      '₹${NumberFormat('#,##,###').format(monthExpenses.where((e) => e.countsAsSpend).fold(0.0, (s, e) => s + e.amount))}',
                       style: AppTextStyles.h3.copyWith(
                           color: AppColors.expenseRed),
                     ),

@@ -4,6 +4,7 @@ import '../../../core/providers/repository_providers.dart';
 import '../../../core/repositories/i_expense_repository.dart';
 import '../../categories/models/category.dart';
 import '../models/expense_model.dart';
+import '../models/ledger_rules.dart';
 
 /// Real-time stream of all expenses, newest first.
 final expensesStreamProvider = StreamProvider<List<Expense>>((ref) {
@@ -95,23 +96,23 @@ final expenseNotifierProvider =
   return ExpenseNotifier(ref.watch(expenseRepositoryProvider));
 });
 
-/// Computed: total income (credit) for the current month (excludes isCountedAsSpend=false).
+/// Computed: total income (credits, excluding transfers) for the current month.
 final monthlyIncomeProvider = Provider<double>((ref) {
   final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? [];
   final now = DateTime.now();
   return expenses
       .where((e) => e.date.year == now.year && e.date.month == now.month)
-      .where((e) => e.amount < 0 && e.isCountedAsSpend) // negative = credit/income
+      .where((e) => e.countsAsIncome) // negative = credit/income
       .fold(0.0, (sum, e) => sum + e.amount.abs());
 });
 
-/// Computed: total counted spends for the current month (excludes isCountedAsSpend=false).
+/// Computed: total counted spends for the current month (excludes transfers and isCountedAsSpend=false).
 final monthlyExpensesProvider = Provider<double>((ref) {
   final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? [];
   final now = DateTime.now();
   return expenses
       .where((e) => e.date.year == now.year && e.date.month == now.month)
-      .where((e) => e.amount > 0 && e.isCountedAsSpend)
+      .where((e) => e.countsAsSpend)
       .fold(0.0, (sum, e) => sum + e.amount);
 });
 

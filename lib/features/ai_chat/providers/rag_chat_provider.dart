@@ -151,7 +151,7 @@ class RagChatNotifier extends StateNotifier<RagChatState> {
     } catch (e) {
       final errorMessage = e is RagApiException
           ? e.message
-          : 'Failed to connect to Spendly AI. Please try again.';
+          : 'Failed to connect to Fiscora AI. Please try again.';
 
       final updatedList = state.messages.map((msg) {
         if (msg.id == aiMsgId) {
