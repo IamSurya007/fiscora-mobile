@@ -15,6 +15,10 @@ class Expense {
   final String source; // manual | sms | ocr
   final String merchant;
   final String accountId;
+
+  /// For a transfer between your own accounts (e.g. paying a card bill from
+  /// savings): the account receiving the money. '' for ordinary transactions.
+  final String transferAccountId;
   final DateTime createdAt;
 
   /// Display name of the subcategory at write time ('' if none).
@@ -44,6 +48,7 @@ class Expense {
     this.source = 'manual',
     this.merchant = '',
     this.accountId = 'default_bank',
+    this.transferAccountId = '',
     required this.createdAt,
     this.isCountedAsSpend = true,
   });
@@ -92,6 +97,7 @@ class Expense {
       accountId: json['accountId'] as String? ??
           json['account_id'] as String? ??
           'default_bank',
+      transferAccountId: json['transferAccountId'] as String? ?? '',
       createdAt: parseDate(json['createdAt']),
       isCountedAsSpend: parsedCountAsSpend ?? defaultIsCountedAsSpend ?? true,
     );
@@ -109,6 +115,7 @@ class Expense {
         'source': source,
         'merchant': merchant,
         'accountId': accountId,
+        'transferAccountId': transferAccountId,
         'createdAt': Timestamp.fromDate(createdAt),
         'isCountedAsSpend': isCountedAsSpend,
       };
@@ -126,6 +133,7 @@ class Expense {
     String? source,
     String? merchant,
     String? accountId,
+    String? transferAccountId,
     DateTime? createdAt,
     bool? isCountedAsSpend,
   }) {
@@ -142,6 +150,7 @@ class Expense {
       source: source ?? this.source,
       merchant: merchant ?? this.merchant,
       accountId: accountId ?? this.accountId,
+      transferAccountId: transferAccountId ?? this.transferAccountId,
       createdAt: createdAt ?? this.createdAt,
       isCountedAsSpend: isCountedAsSpend ?? this.isCountedAsSpend,
     );

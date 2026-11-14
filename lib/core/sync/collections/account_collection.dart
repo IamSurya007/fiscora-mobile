@@ -11,7 +11,12 @@ class AccountCollection with SyncMetadataMixin {
   late String name;
   late String type;
   late String institution;
+  /// Derived locally: openingBalance + effects of live transactions
+  /// (see core/services/account_balances.dart). Never pushed as the truth.
   late double currentBalance;
+
+  /// Balance before any recorded transaction; null until first computed.
+  double? openingBalance;
   late double creditLimit;
   late int colorValue;
   late String iconName;
@@ -34,6 +39,7 @@ class AccountCollection with SyncMetadataMixin {
       ..type = account.type.name
       ..institution = account.institution
       ..currentBalance = account.currentBalance
+      ..openingBalance = account.openingBalance
       ..creditLimit = account.creditLimit
       ..colorValue = account.colorValue
       ..iconName = account.iconName
@@ -61,6 +67,7 @@ class AccountCollection with SyncMetadataMixin {
       ),
       institution: institution,
       currentBalance: currentBalance,
+      openingBalance: openingBalance,
       creditLimit: creditLimit,
       colorValue: colorValue,
       iconName: iconName,
@@ -74,6 +81,9 @@ class AccountCollection with SyncMetadataMixin {
       'name': name,
       'type': type,
       'institution': institution,
+      // The server derives the balance; it only needs openingBalance. The
+      // current figure is still sent for servers older than that change.
+      if (openingBalance != null) 'openingBalance': openingBalance,
       'currentBalance': currentBalance,
       'current_balance': currentBalance,
       'creditLimit': creditLimit,

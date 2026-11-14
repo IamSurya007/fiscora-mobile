@@ -12,6 +12,13 @@ class ResolutionResult {
   ResolutionResult(this.action, [this.mergedPayload]);
 }
 
+/// Pull-side resolution. `localVersion` is the server version this device last
+/// saw (it is no longer bumped on local edits), so:
+/// - a clean local copy takes the remote one whenever the server has moved on;
+/// - a dirty local copy is never overwritten by a pull. Its queued push carries
+///   the base version, and the server, which sees both sides, answers
+///   "conflict" if someone else changed the record in the meantime.
+/// Timestamps are not compared: the server clock and the device clock differ.
 class ConflictResolver {
   static ResolutionResult resolve({
     required String entityType,
@@ -25,40 +32,9 @@ class ConflictResolver {
     required Map<String, dynamic> localPayload,
     required Map<String, dynamic> remotePayload,
   }) {
-    // 1. Deletes always win over concurrent edits
-    if (localIsDeleted || remoteIsDeleted) {
-      return ResolutionResult(ConflictResolution.delete);
-    }
-
-    // 2. If local is not dirty, remote simply wins if its version or timestamp is newer
-    if (!localIsDirty) {
-      if (remoteVersion > localVersion || remoteUpdatedAt.isAfter(localUpdatedAt)) {
-        return ResolutionResult(ConflictResolution.useRemote);
-      }
-      return ResolutionResult(ConflictResolution.useLocal);
-    }
-
-    // 3. If local is dirty, check if the server has a newer version that conflicts
-    // If the server version is less than or equal to the client's version, the local change is newer
-    if (remoteVersion <= localVersion) {
-      return ResolutionResult(ConflictResolution.useLocal);
-    }
-
-    // 4. Version conflict! Both have updated concurrently since the last sync.
-    // Financial safety check: Divergent loan statuses (e.g. local 'PAID' vs remote 'OVERDUE')
-    if (entityType == 'loan') {
-      final localStatus = localPayload['status']?.toString().toUpperCase();
-      final remoteStatus = remotePayload['status']?.toString().toUpperCase();
-      if (localStatus != remoteStatus) {
-        return ResolutionResult(ConflictResolution.conflict);
-      }
-    }
-
-    // 5. Default: Last-Write-Wins by timestamp
-    if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
-      return ResolutionResult(ConflictResolution.useRemote);
-    } else {
-      return ResolutionResult(ConflictResolution.useLocal);
-    }
+    if (remoteIsDeleted || localIsDeleted) return ResolutionResult(ConflictResolution.delete);
+    if (localIsDirty) return ResolutionResult(ConflictResolution.useLocal);
+    if (remoteVersion > localVersion) return ResolutionResult(ConflictResolution.useRemote);
+    return ResolutionResult(ConflictResolution.useLocal);
   }
 }

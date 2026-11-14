@@ -59,6 +59,9 @@ class Account {
   final AccountType type;
   final String institution;
   final double currentBalance; // For bank/cash/wallet: available money. For CC: outstanding balance owed.
+  /// Balance before any recorded transaction; the current balance is derived
+  /// from it. Null for accounts that predate derived balances.
+  final double? openingBalance;
   final double creditLimit;    // For credit cards only
   final int colorValue;
   final String iconName;
@@ -71,6 +74,7 @@ class Account {
     required this.type,
     this.institution = '',
     required this.currentBalance,
+    this.openingBalance,
     this.creditLimit = 0.0,
     required this.colorValue,
     this.iconName = '',
@@ -104,6 +108,7 @@ class Account {
       currentBalance: (json['currentBalance'] as num?)?.toDouble() ??
           (json['current_balance'] as num?)?.toDouble() ??
           0.0,
+      openingBalance: (json['openingBalance'] as num?)?.toDouble(),
       creditLimit: (json['creditLimit'] as num?)?.toDouble() ??
           (json['credit_limit'] as num?)?.toDouble() ??
           0.0,
@@ -134,6 +139,7 @@ class Account {
     AccountType? type,
     String? institution,
     double? currentBalance,
+    double? openingBalance,
     double? creditLimit,
     int? colorValue,
     String? iconName,
@@ -146,6 +152,7 @@ class Account {
       type: type ?? this.type,
       institution: institution ?? this.institution,
       currentBalance: currentBalance ?? this.currentBalance,
+      openingBalance: openingBalance ?? this.openingBalance,
       creditLimit: creditLimit ?? this.creditLimit,
       colorValue: colorValue ?? this.colorValue,
       iconName: iconName ?? this.iconName,

@@ -95,6 +95,12 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
         colorValue: _selectedColor,
       );
       await notifier.updateAccount(updated);
+      // Only an edited balance field moves the balance. Comparing with the value
+      // the form opened with (not the live balance) means an SMS imported while
+      // the sheet was open isn't undone by saving a rename.
+      if (balance != existing.currentBalance) {
+        await notifier.updateAccountBalance(existing.id, balance);
+      }
     } else {
       final newAccount = Account(
         id: const Uuid().v4(),

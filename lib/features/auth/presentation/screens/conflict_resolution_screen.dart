@@ -11,6 +11,8 @@ import 'package:fiscora/core/sync/collections/loan_collection.dart';
 import 'package:fiscora/core/sync/collections/investment_collection.dart';
 import 'package:fiscora/core/sync/collections/budget_collection.dart';
 import 'package:fiscora/core/sync/collections/category_rule_collection.dart';
+import 'package:fiscora/core/sync/collections/account_collection.dart';
+import 'package:fiscora/core/sync/collections/category_collection.dart';
 import 'package:fiscora/core/sync/isar_database.dart';
 import 'package:fiscora/core/sync/sync_engine.dart';
 import 'package:fiscora/core/sync/sync_metadata.dart';
@@ -242,11 +244,13 @@ class _ConflictDetailsSheet extends StatelessWidget {
 
     await _isar.write((isar) {
       if (useLocal) {
-        // Keep local: Mark record as pendingUpdate to push it to the server
-        _setLocalStatus(isar, conflict.entityType, conflict.clientId, SyncStatus.pendingUpdate);
+        // Keep local: push it again on top of the server's current version,
+        // so the server accepts it instead of reporting the same conflict.
+        _setLocalStatus(isar, conflict.entityType, conflict.clientId, SyncStatus.pendingUpdate,
+            baseVersion: server['__serverVersion'] as int?);
       } else {
-        // Keep server: Overwrite local fields with server values
-        _applyServerOverride(isar, conflict.entityType, conflict.clientId, server);
+        // Keep server: apply the server's full record (all fields and types).
+        SyncEngine.instance.applyConflictServerCopy(conflict.entityType, conflict.clientId, server);
       }
 
       // Delete the conflict record now that it is resolved
@@ -261,13 +265,13 @@ class _ConflictDetailsSheet extends StatelessWidget {
     SyncEngine.instance.triggerSync();
   }
 
-  void _setLocalStatus(Isar isar, String entityType, String clientId, SyncStatus status) {
+  void _setLocalStatus(Isar isar, String entityType, String clientId, SyncStatus status, {int? baseVersion}) {
     if (entityType == 'expense') {
       final res = isar.expenseCollections.where().clientIdEqualTo(clientId).findFirst();
       if (res != null) {
         res.syncStatus = status.name;
+        if (baseVersion != null) res.version = baseVersion;
         res.dirty = true;
-        res.version++;
         res.updatedAt = DateTime.now().toUtc();
         isar.expenseCollections.put(res);
         SyncEngine.enqueue(
@@ -282,8 +286,8 @@ class _ConflictDetailsSheet extends StatelessWidget {
       final res = isar.loanCollections.where().clientIdEqualTo(clientId).findFirst();
       if (res != null) {
         res.syncStatus = status.name;
+        if (baseVersion != null) res.version = baseVersion;
         res.dirty = true;
-        res.version++;
         res.updatedAt = DateTime.now().toUtc();
         isar.loanCollections.put(res);
         SyncEngine.enqueue(
@@ -298,8 +302,8 @@ class _ConflictDetailsSheet extends StatelessWidget {
       final res = isar.investmentCollections.where().clientIdEqualTo(clientId).findFirst();
       if (res != null) {
         res.syncStatus = status.name;
+        if (baseVersion != null) res.version = baseVersion;
         res.dirty = true;
-        res.version++;
         res.updatedAt = DateTime.now().toUtc();
         isar.investmentCollections.put(res);
         SyncEngine.enqueue(
@@ -314,8 +318,8 @@ class _ConflictDetailsSheet extends StatelessWidget {
       final res = isar.budgetCollections.where().clientIdEqualTo(clientId).findFirst();
       if (res != null) {
         res.syncStatus = status.name;
+        if (baseVersion != null) res.version = baseVersion;
         res.dirty = true;
-        res.version++;
         res.updatedAt = DateTime.now().toUtc();
         isar.budgetCollections.put(res);
         SyncEngine.enqueue(
@@ -330,8 +334,8 @@ class _ConflictDetailsSheet extends StatelessWidget {
       final res = isar.categoryRuleCollections.where().clientIdEqualTo(clientId).findFirst();
       if (res != null) {
         res.syncStatus = status.name;
+        if (baseVersion != null) res.version = baseVersion;
         res.dirty = true;
-        res.version++;
         res.updatedAt = DateTime.now().toUtc();
         isar.categoryRuleCollections.put(res);
         SyncEngine.enqueue(
@@ -342,96 +346,36 @@ class _ConflictDetailsSheet extends StatelessWidget {
           payload: res.toSyncJson(),
         );
       }
+    } else if (entityType == 'account' || entityType == 'category') {
+      // These were missing, so "Keep local" deleted the conflict and pushed nothing.
+      final SyncMetadataMixin? res = entityType == 'account'
+          ? isar.accountCollections.where().clientIdEqualTo(clientId).findFirst()
+          : isar.categoryCollections.where().clientIdEqualTo(clientId).findFirst();
+      if (res != null) {
+        res.syncStatus = status.name;
+        if (baseVersion != null) res.version = baseVersion;
+        res.dirty = true;
+        res.updatedAt = DateTime.now().toUtc();
+        final Map<String, dynamic> payload;
+        if (res is AccountCollection) {
+          isar.accountCollections.put(res);
+          payload = res.toSyncJson();
+        } else {
+          final cat = res as CategoryCollection;
+          isar.categoryCollections.put(cat);
+          payload = cat.toSyncJson();
+        }
+        SyncEngine.enqueue(
+          isar: isar,
+          entityType: entityType,
+          clientId: clientId,
+          operationType: res.serverId == null ? 'create' : 'update',
+          payload: payload,
+        );
+      }
     }
   }
 
-  void _applyServerOverride(Isar isar, String entityType, String clientId, Map<String, dynamic> serverPayload) {
-    final serverVersion = serverPayload['version'] as int? ?? 1;
-    final serverUpdatedAt = DateTime.now().toUtc(); // Fallback if missing
-    
-    if (entityType == 'expense') {
-      final local = isar.expenseCollections.where().clientIdEqualTo(clientId).findFirst();
-      if (local != null) {
-        local.amount = (serverPayload['amount'] as num? ?? 0.0).toDouble();
-        local.category = serverPayload['category'] as String? ?? 'Other';
-        local.note = serverPayload['note'] as String? ?? '';
-        local.date = DateTime.parse(serverPayload['date'] as String);
-        local.method = serverPayload['method'] as String? ?? 'upi';
-        local.source = serverPayload['source'] as String? ?? 'manual';
-        local.merchant = serverPayload['merchant'] as String? ?? '';
-        local.createdAt = DateTime.parse(serverPayload['createdAt'] as String);
-        
-        local.syncStatus = SyncStatus.synced.name;
-        local.dirty = false;
-        local.version = serverVersion;
-        local.serverUpdatedAt = serverUpdatedAt;
-        isar.expenseCollections.put(local);
-      }
-    } else if (entityType == 'loan') {
-      final local = isar.loanCollections.where().clientIdEqualTo(clientId).findFirst();
-      if (local != null) {
-        local.type = serverPayload['type'] as String? ?? 'given';
-        local.name = serverPayload['name'] as String? ?? '';
-        local.principal = (serverPayload['principal'] as num? ?? 0.0).toDouble();
-        local.total = (serverPayload['total'] as num? ?? 0.0).toDouble();
-        local.interestRate = (serverPayload['interestRate'] as num? ?? 0.0).toDouble();
-        local.repaymentDate = serverPayload['repaymentDate'] != null ? DateTime.parse(serverPayload['repaymentDate'] as String) : null;
-        local.status = serverPayload['status'] as String? ?? 'active';
-        local.notes = serverPayload['notes'] as String? ?? '';
-        local.createdAt = DateTime.parse(serverPayload['createdAt'] as String);
-        
-        local.syncStatus = SyncStatus.synced.name;
-        local.dirty = false;
-        local.version = serverVersion;
-        local.serverUpdatedAt = serverUpdatedAt;
-        isar.loanCollections.put(local);
-      }
-    } else if (entityType == 'investment') {
-      final local = isar.investmentCollections.where().clientIdEqualTo(clientId).findFirst();
-      if (local != null) {
-        local.type = serverPayload['type'] as String? ?? 'RD';
-        local.name = serverPayload['name'] as String? ?? '';
-        local.monthlyAmount = (serverPayload['monthlyAmount'] as num? ?? 0.0).toDouble();
-        local.principal = (serverPayload['principal'] as num? ?? 0.0).toDouble();
-        local.maturityAmount = (serverPayload['maturityAmount'] as num? ?? 0.0).toDouble();
-        local.durationMonths = (serverPayload['durationMonths'] as num? ?? 12).toInt();
-        local.startDate = DateTime.parse(serverPayload['startDate'] as String);
-        local.maturityDate = DateTime.parse(serverPayload['maturityDate'] as String);
-        local.institution = serverPayload['institution'] as String? ?? '';
-        
-        local.syncStatus = SyncStatus.synced.name;
-        local.dirty = false;
-        local.version = serverVersion;
-        local.serverUpdatedAt = serverUpdatedAt;
-        isar.investmentCollections.put(local);
-      }
-    } else if (entityType == 'budget') {
-      final local = isar.budgetCollections.where().clientIdEqualTo(clientId).findFirst();
-      if (local != null) {
-        local.month = serverPayload['month'] as String? ?? '';
-        local.category = serverPayload['category'] as String? ?? 'Other';
-        local.amountLimit = (serverPayload['limit'] as num? ?? 0.0).toDouble();
-        
-        local.syncStatus = SyncStatus.synced.name;
-        local.dirty = false;
-        local.version = serverVersion;
-        local.serverUpdatedAt = serverUpdatedAt;
-        isar.budgetCollections.put(local);
-      }
-    } else if (entityType == 'category_rule') {
-      final local = isar.categoryRuleCollections.where().clientIdEqualTo(clientId).findFirst();
-      if (local != null) {
-        local.merchant = serverPayload['merchant'] as String? ?? '';
-        local.category = serverPayload['category'] as String? ?? 'Other';
-        
-        local.syncStatus = SyncStatus.synced.name;
-        local.dirty = false;
-        local.version = serverVersion;
-        local.serverUpdatedAt = serverUpdatedAt;
-        isar.categoryRuleCollections.put(local);
-      }
-    }
-  }
 }
 
 class _PayloadColumn extends StatelessWidget {

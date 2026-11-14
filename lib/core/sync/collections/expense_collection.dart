@@ -20,6 +20,7 @@ class ExpenseCollection with SyncMetadataMixin {
   late String source;
   late String merchant;
   late String accountId;
+  String transferAccountId = '';
   late DateTime createdAt;
   bool isCountedAsSpend = true;
 
@@ -46,6 +47,7 @@ class ExpenseCollection with SyncMetadataMixin {
       ..source = expense.source
       ..merchant = expense.merchant
       ..accountId = expense.accountId
+      ..transferAccountId = expense.transferAccountId
       ..createdAt = expense.createdAt
       ..isCountedAsSpend = expense.isCountedAsSpend;
 
@@ -78,6 +80,7 @@ class ExpenseCollection with SyncMetadataMixin {
       source: source,
       merchant: merchant,
       accountId: accountId.isEmpty ? 'default_bank' : accountId,
+      transferAccountId: transferAccountId,
       createdAt: createdAt,
       isCountedAsSpend: isCountedAsSpend,
     );
@@ -96,6 +99,7 @@ class ExpenseCollection with SyncMetadataMixin {
       'source': source.toUpperCase(), // backend enums: MANUAL, SMS, OCR
       'merchant': merchant,
       'accountId': accountId,
+      'transferAccountId': transferAccountId,
       'createdAt': createdAt.toUtc().toIso8601String(),
       'isCountedAsSpend': isCountedAsSpend,
       'is_counted_as_spend': isCountedAsSpend,

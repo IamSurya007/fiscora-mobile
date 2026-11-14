@@ -1,12 +1,9 @@
-import 'dart:convert';
 
 import 'package:isar_plus/isar_plus.dart';
 import 'package:fiscora/core/sync/outbox_operation.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:fiscora/features/expenses/models/expense_model.dart';
-import 'package:fiscora/features/accounts/models/account_model.dart';
-import 'package:fiscora/core/sync/collections/account_collection.dart';
 import 'package:fiscora/core/sync/collections/expense_collection.dart';
 import 'package:fiscora/core/sync/collections/budget_collection.dart';
 import 'package:fiscora/core/sync/collections/category_rule_collection.dart';
@@ -18,6 +15,7 @@ import 'package:fiscora/core/sync/isar_database.dart';
 import 'package:fiscora/core/sync/sync_engine.dart';
 import 'package:fiscora/core/sync/sync_metadata.dart';
 import 'package:fiscora/core/repositories/i_expense_repository.dart';
+import 'package:fiscora/core/services/account_balances.dart';
 
 class IsarExpenseRepository implements IExpenseRepository {
   Isar get _isar => IsarDatabase.instance.isar;
@@ -32,39 +30,6 @@ class IsarExpenseRepository implements IExpenseRepository {
         .sortByDateDesc()
         .watch(fireImmediately: true)
         .map((list) => list.map((e) => e.toDomain()).toList());
-  }
-
-  /// Pushes an account balance change to the server. Bulk SMS imports touch
-  /// the same account many times, so an op that is still queued is updated
-  /// in place instead of adding another one.
-  void _enqueueAccount(Isar isar, AccountCollection accCol) {
-    accCol.syncStatus = accCol.serverId == null
-        ? SyncStatus.pendingCreate.name
-        : SyncStatus.pendingUpdate.name;
-    accCol.updatedAt = DateTime.now().toUtc();
-    isar.accountCollections.put(accCol);
-
-    final queued = isar.outboxOperations
-        .where()
-        .clientIdEqualTo(accCol.clientId)
-        .and()
-        .entityTypeEqualTo('account')
-        .and()
-        .outboxStatusEqualTo(OutboxStatus.queued.name)
-        .findFirst();
-    if (queued != null && queued.operationType != 'delete') {
-      queued.payloadJson = jsonEncode(accCol.toSyncJson());
-      isar.outboxOperations.put(queued);
-      return;
-    }
-
-    SyncEngine.enqueue(
-      isar: isar,
-      entityType: 'account',
-      clientId: accCol.clientId,
-      operationType: accCol.serverId == null ? 'create' : 'update',
-      payload: accCol.toSyncJson(),
-    );
   }
 
   @override
@@ -116,20 +81,8 @@ class IsarExpenseRepository implements IExpenseRepository {
         payload: col.toSyncJson(),
       );
 
-      // Reconcile account balance
-      final accCol = isar.accountCollections
-          .where()
-          .clientIdEqualTo(expense.accountId)
-          .findFirst();
-      if (accCol != null) {
-        final isCredit = accCol.type == AccountType.credit_card.name;
-        final delta = isCredit ? expense.amount : -expense.amount;
-        accCol.currentBalance += delta;
-        accCol.version++;
-        accCol.dirty = true;
-        isar.accountCollections.put(accCol);
-        _enqueueAccount(isar, accCol);
-      }
+      // Balances are derived from transactions; recompute in the same write.
+      AccountBalances.recomputeAll(isar);
     });
 
     // Trigger sync in background
@@ -145,49 +98,19 @@ class IsarExpenseRepository implements IExpenseRepository {
           .findFirst();
 
       if (existing != null) {
-        final oldAccountId = existing.accountId.isEmpty ? 'default_bank' : existing.accountId;
-        final oldAmount = existing.amount;
-
-        // 1. Reverse old expense effect on old account
-        final oldAccCol = isar.accountCollections
-            .where()
-            .clientIdEqualTo(oldAccountId)
-            .findFirst();
-        if (oldAccCol != null) {
-          final oldIsCredit = oldAccCol.type == AccountType.credit_card.name;
-          final reverseDelta = oldIsCredit ? -oldAmount : oldAmount;
-          oldAccCol.currentBalance += reverseDelta;
-          oldAccCol.version++;
-          oldAccCol.dirty = true;
-          isar.accountCollections.put(oldAccCol);
-          _enqueueAccount(isar, oldAccCol);
-        }
-
-        // 2. Apply new expense effect on new account
-        final newAccCol = isar.accountCollections
-            .where()
-            .clientIdEqualTo(expense.accountId)
-            .findFirst();
-        if (newAccCol != null) {
-          final newIsCredit = newAccCol.type == AccountType.credit_card.name;
-          final applyDelta = newIsCredit ? expense.amount : -expense.amount;
-          newAccCol.currentBalance += applyDelta;
-          newAccCol.version++;
-          newAccCol.dirty = true;
-          isar.accountCollections.put(newAccCol);
-          _enqueueAccount(isar, newAccCol);
-        }
-
         final col = ExpenseCollection.fromDomain(
           _withNames(isar, expense),
           serverId: existing.serverId,
           serverUpdatedAt: existing.serverUpdatedAt,
           syncStatus: existing.serverId == null ? SyncStatus.pendingCreate : SyncStatus.pendingUpdate,
-          version: existing.version + 1,
+          // version stays the last server version seen; the server uses it to
+          // detect edits made elsewhere in the meantime.
+          version: existing.version,
           dirty: true,
         )..id = existing.id;
 
         isar.expenseCollections.put(col);
+        AccountBalances.recomputeAll(isar);
         SyncEngine.enqueue(
           isar: isar,
           entityType: 'expense',
@@ -208,51 +131,26 @@ class IsarExpenseRepository implements IExpenseRepository {
           .where()
           .clientIdEqualTo(id)
           .findFirst();
+      if (existing == null) return;
 
-      if (existing != null) {
-        final oldAccountId = existing.accountId.isEmpty ? 'default_bank' : existing.accountId;
-        final oldAmount = existing.amount;
+      // Always keep a tombstone and tell the server, even if this record was
+      // never acknowledged. Hard-deleting unsynced rows let them come back:
+      // the create may already have reached the server (response lost), and
+      // SMS import uses existing ids to skip messages the user deleted.
+      existing.isDeleted = true;
+      existing.dirty = true;
+      existing.syncStatus = SyncStatus.pendingDelete.name;
+      existing.updatedAt = DateTime.now().toUtc();
+      isar.expenseCollections.put(existing);
 
-        // Reverse expense effect on account balance
-        final oldAccCol = isar.accountCollections
-            .where()
-            .clientIdEqualTo(oldAccountId)
-            .findFirst();
-        if (oldAccCol != null) {
-          final oldIsCredit = oldAccCol.type == AccountType.credit_card.name;
-          final reverseDelta = oldIsCredit ? -oldAmount : oldAmount;
-          oldAccCol.currentBalance += reverseDelta;
-          oldAccCol.version++;
-          oldAccCol.dirty = true;
-          isar.accountCollections.put(oldAccCol);
-          _enqueueAccount(isar, oldAccCol);
-        }
-
-        if (existing.serverId == null) {
-          // Hard delete local-only records
-          isar.expenseCollections.delete(existing.id);
-          // Clean up outbox operations for this clientId
-          final ops = isar.outboxOperations.where().clientIdEqualTo(id).findAll();
-          for (final op in ops) {
-            isar.outboxOperations.delete(op.id);
-          }
-        } else {
-          // Soft delete synced records
-          existing.isDeleted = true;
-          existing.dirty = true;
-          existing.syncStatus = SyncStatus.pendingDelete.name;
-          existing.updatedAt = DateTime.now().toUtc();
-          isar.expenseCollections.put(existing);
-
-          SyncEngine.enqueue(
-            isar: isar,
-            entityType: 'expense',
-            clientId: id,
-            operationType: 'delete',
-            payload: {},
-          );
-        }
-      }
+      SyncEngine.enqueue(
+        isar: isar,
+        entityType: 'expense',
+        clientId: id,
+        operationType: 'delete',
+        payload: {},
+      );
+      AccountBalances.recomputeAll(isar);
     });
 
     SyncEngine.instance.triggerSync();
@@ -300,7 +198,6 @@ class IsarExpenseRepository implements IExpenseRepository {
           if (existing.amountLimit != limit || existing.isDeleted) {
             existing.amountLimit = limit;
             existing.isDeleted = false;
-            existing.version++;
             existing.dirty = true;
             existing.syncStatus = existing.serverId == null ? SyncStatus.pendingCreate.name : SyncStatus.pendingUpdate.name;
             existing.updatedAt = DateTime.now().toUtc();
@@ -420,7 +317,6 @@ class IsarExpenseRepository implements IExpenseRepository {
             ..categoryId = selection.categoryId
             ..subcategoryId = selection.subcategoryId
             ..isDeleted = false
-            ..version += 1
             ..dirty = true
             ..syncStatus = existing.serverId == null
                 ? SyncStatus.pendingCreate.name
@@ -496,7 +392,6 @@ class IsarExpenseRepository implements IExpenseRepository {
           ..subcategoryId = r.sub?.id ?? ''
           ..category = r.parent.name
           ..subcategory = r.sub?.name ?? ''
-          ..version += 1
           ..dirty = true
           ..syncStatus = exp.serverId == null ? SyncStatus.pendingCreate.name : SyncStatus.pendingUpdate.name
           ..updatedAt = DateTime.now().toUtc();
