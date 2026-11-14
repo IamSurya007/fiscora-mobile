@@ -322,6 +322,45 @@ class IsarExpenseRepository implements IExpenseRepository {
       );
 
   @override
+  Stream<List<({String merchant, CategorySelection selection})>> watchMerchantRules() {
+    return _isar.categoryRuleCollections
+        .where()
+        .isDeletedEqualTo(false)
+        .sortByMerchant()
+        .watch(fireImmediately: true)
+        .map((rows) => [
+              for (final r in rows)
+                if (r.categoryId.isNotEmpty)
+                  (merchant: r.merchant, selection: CategorySelection(r.categoryId, r.subcategoryId)),
+            ]);
+  }
+
+  @override
+  Future<void> deleteMerchantRule(String merchant) async {
+    await _isar.writeAsync((isar) {
+      final rule = isar.categoryRuleCollections
+          .where()
+          .merchantEqualTo(merchant.trim(), caseSensitive: false)
+          .findFirst();
+      if (rule == null || rule.isDeleted) return;
+      rule
+        ..isDeleted = true
+        ..dirty = true
+        ..syncStatus = SyncStatus.pendingDelete.name
+        ..updatedAt = DateTime.now().toUtc();
+      isar.categoryRuleCollections.put(rule);
+      SyncEngine.enqueue(
+        isar: isar,
+        entityType: 'category_rule',
+        clientId: rule.clientId,
+        operationType: 'delete',
+        payload: {},
+      );
+    });
+    SyncEngine.instance.triggerSync();
+  }
+
+  @override
   Future<void> setMerchantRule(String merchant, CategorySelection selection) async {
     final trimmed = merchant.trim();
     if (trimmed.isEmpty || selection.categoryId.isEmpty) return;

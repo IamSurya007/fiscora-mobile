@@ -14,6 +14,7 @@ import 'features/loans/screens/loans_screen.dart';
 import 'features/investments/screens/investments_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
 import 'features/expenses/screens/review_inbox_screen.dart';
+import 'features/expenses/screens/add_expense_sheet.dart';
 
 /// Top-level authenticated shell — holds the floating nav + 5 screens.
 /// Nav index → page:
@@ -174,19 +175,35 @@ class _AppShellState extends ConsumerState<AppShell>
           children: [
             HomeScreen(
               user: widget.user,
-              onSeeAll: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ExpensesScreen()),
-                );
-              },
-              onProfileTap: () => setState(() => _currentIndex = 3),
+              onSeeAll: () => setState(() => _currentIndex = 1),
+              onProfileTap: () => setState(() => _currentIndex = 4),
             ),
+            const ExpensesScreen(initialTab: 1),
             const LoansScreen(),
             const InvestmentsScreen(),
             ProfileScreen(user: widget.user),
           ],
         ),
+        // Adding a transaction is the most common action: one tap from Home
+        // and Transactions.
+        floatingActionButton: _currentIndex <= 1
+            ? Padding(
+                padding: const EdgeInsets.only(bottom: 72),
+                child: FloatingActionButton(
+                  heroTag: 'add-transaction',
+                  backgroundColor: AppColors.primaryNavy,
+                  foregroundColor: Colors.white,
+                  tooltip: 'Add transaction',
+                  onPressed: () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const AddExpenseSheet(),
+                  ),
+                  child: const Icon(Icons.add_rounded),
+                ),
+              )
+            : null,
         bottomNavigationBar: AppBottomNav(
           currentIndex: _currentIndex,
           onTap: _handleNavTap,

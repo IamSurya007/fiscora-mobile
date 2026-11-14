@@ -11,6 +11,12 @@ final expensesStreamProvider = StreamProvider<List<Expense>>((ref) {
   return ref.watch(expenseRepositoryProvider).watchExpenses();
 });
 
+/// Merchant rules learned from "Update All" and explicit category choices.
+final merchantRulesProvider =
+    StreamProvider<List<({String merchant, CategorySelection selection})>>((ref) {
+  return ref.watch(expenseRepositoryProvider).watchMerchantRules();
+});
+
 /// Auto-captured transactions waiting for the user to confirm them, newest first.
 final reviewQueueProvider = Provider<List<Expense>>((ref) {
   final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? const [];
@@ -43,6 +49,10 @@ class ExpenseNotifier extends StateNotifier<AsyncValue<void>> {
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
+  }
+
+  Future<void> deleteMerchantRule(String merchant) async {
+    await _repo.deleteMerchantRule(merchant);
   }
 
   Future<void> approveExpenses(List<String> ids) async {

@@ -145,4 +145,11 @@ class FirestoreExpenseRepository implements IExpenseRepository {
   Future<void> approveExpenses(List<String> ids) async {
     // Unused legacy backend (see repository_providers.dart); nothing to review.
   }
+
+  @override
+  Stream<List<({String merchant, CategorySelection selection})>> watchMerchantRules() =>
+      Stream.value(const []);
+
+  @override
+  Future<void> deleteMerchantRule(String merchant) async {}
 }

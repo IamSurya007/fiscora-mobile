@@ -8,21 +8,18 @@ import '../../../core/widgets/transaction_tile.dart';
 import '../models/expense_model.dart';
 import '../services/expense_providers.dart';
 import 'add_expense_sheet.dart';
+import '../widgets/delete_with_undo.dart';
 
 /// Auto-captured transactions waiting for a decision. Swipe right to keep,
 /// swipe left to delete, tap to fix the amount, category or account.
 /// Recategorising offers "Update All", which also clears every matching
 /// capture from this list and remembers the merchant for next time.
-/// Ids swiped away for deletion but still undoable. The real delete waits for
-/// the undo snackbar to close: once a delete reaches the server it is final.
-final _pendingDeleteProvider = StateProvider<Set<String>>((ref) => {});
-
 class ReviewInboxScreen extends ConsumerWidget {
   const ReviewInboxScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hidden = ref.watch(_pendingDeleteProvider);
+    final hidden = ref.watch(pendingDeleteIdsProvider);
     final queue = ref.watch(reviewQueueProvider).where((e) => !hidden.contains(e.id)).toList();
     final notifier = ref.read(expenseNotifierProvider.notifier);
 
@@ -100,29 +97,11 @@ class _ReviewItem extends ConsumerWidget {
         alignment: Alignment.centerRight,
       ),
       onDismissed: (direction) async {
-        final messenger = ScaffoldMessenger.of(context);
         if (direction == DismissDirection.startToEnd) {
           await notifier.approveExpenses([expense.id]);
           return;
         }
-        final pending = ref.read(_pendingDeleteProvider.notifier);
-        pending.update((s) => {...s, expense.id});
-        var undone = false;
-        final closed = messenger
-            .showSnackBar(
-              SnackBar(
-                content: const Text('Transaction deleted'),
-                behavior: SnackBarBehavior.floating,
-                action: SnackBarAction(label: 'UNDO', onPressed: () => undone = true),
-              ),
-            )
-            .closed;
-        await closed;
-        if (undone) {
-          pending.update((s) => {...s}..remove(expense.id));
-        } else {
-          await notifier.deleteExpense(expense.id);
-        }
+        await deleteWithUndo(context, ref, expense);
       },
       child: TransactionTile(
         expense: expense,

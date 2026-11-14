@@ -14,6 +14,7 @@ import '../../../features/investments/services/investment_providers.dart';
 import '../../../splash_screen.dart';
 import '../../auth/presentation/screens/conflict_resolution_screen.dart';
 import '../../categories/screens/manage_categories_screen.dart';
+import '../../categories/screens/merchant_rules_screen.dart';
 import '../../../core/sync/sync_engine.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -394,6 +395,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const ManageCategoriesScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.rule_rounded,
+                    label: 'Merchant rules',
+                    sublabel: 'See and change how merchants are categorised',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MerchantRulesScreen()),
                       );
                     },
                   ),

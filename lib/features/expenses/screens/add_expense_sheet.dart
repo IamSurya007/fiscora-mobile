@@ -789,14 +789,47 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
                   : Text(
                       widget.expense != null
                           ? 'Save Changes'
-                          : (_isCredit ? 'Save Income' : 'Save Expense'),
+                          : (_isTransfer ? 'Save Transfer' : _isCredit ? 'Save Income' : 'Save Expense'),
                       style: AppTextStyles.buttonText,
                     ),
             ),
           ),
+          if (widget.expense != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Center(
+              child: TextButton.icon(
+                onPressed: _isSaving ? null : _confirmDelete,
+                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.expenseRed),
+                label: Text(
+                  'Delete transaction',
+                  style: AppTextStyles.labelBold.copyWith(color: AppColors.expenseRed),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDelete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this transaction?'),
+        content: const Text('It is removed from your totals and account balance on all devices.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.expenseRed)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await ref.read(expenseNotifierProvider.notifier).deleteExpense(widget.expense!.id);
+    if (mounted) Navigator.pop(context);
   }
 
   Widget _transferTab() {

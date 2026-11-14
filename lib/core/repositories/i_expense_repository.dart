@@ -43,5 +43,11 @@ abstract interface class IExpenseRepository {
   /// Auto-categorization rule operations
   Future<void> setMerchantRule(String merchant, CategorySelection selection);
   Future<CategorySelection?> getMerchantRule(String merchant);
+
+  /// Merchant -> category rules the app learned, sorted by merchant.
+  Stream<List<({String merchant, CategorySelection selection})>> watchMerchantRules();
+
+  /// Forgets the rule for [merchant]; future captures fall back to the guess.
+  Future<void> deleteMerchantRule(String merchant);
   Future<void> updateExpensesCategory(String merchant, CategorySelection selection);
 }
