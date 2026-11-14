@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +16,8 @@ import 'core/sync/isar_database.dart';
 import 'core/sync/collections/user_profile_collection.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:isar_plus/isar_plus.dart';
+import 'core/services/push_service.dart';
+import 'features/onboarding/onboarding_screen.dart';
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -71,6 +74,7 @@ Future<void> signOutAndClearLocalData(WidgetRef ref) async {
   } on StateError {
     // Sync engine never initialised; nothing to stop.
   }
+  await PushService.instance.unregister();
   await IsarDatabase.clearAll();
   _resetUserScopedProviders(ref);
   await AuthRepositoryImpl().signOut();
@@ -91,6 +95,7 @@ Future<void> _wipeIfOwnedByAnotherUser(String uid) async {
 
 class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
   late bool _ready;
+  bool _needsOnboarding = false;
   static String? _completedSetupUid;
 
   @override
@@ -159,11 +164,33 @@ class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
     
     // Trigger initial pull/push sync in background
     SyncEngine.instance.triggerSync();
+
+    // First run on this device: onboarding, unless this account already has
+    // data here (existing users upgrading skip it).
+    final userRepoForOnboarding = ref.read(userRepositoryProvider);
+    if (!await userRepoForOnboarding.isOnboarded(widget.user.uid)) {
+      final hasData = (await expenseRepo.getAllExpenseIds()).isNotEmpty;
+      if (hasData) {
+        await userRepoForOnboarding.markOnboarded(widget.user.uid);
+      } else {
+        _needsOnboarding = true;
+      }
+    }
+
+    // Budget alerts and reminders from the server (not awaited: the prompt
+    // must not hold the splash screen).
+    unawaited(PushService.instance.register(syncClient));
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_ready) return const _SplashScreen();
+    if (_needsOnboarding) {
+      return OnboardingScreen(onDone: () async {
+        await ref.read(userRepositoryProvider).markOnboarded(widget.user.uid);
+        if (mounted) setState(() => _needsOnboarding = false);
+      });
+    }
     return AppShell(user: widget.user);
   }
 }

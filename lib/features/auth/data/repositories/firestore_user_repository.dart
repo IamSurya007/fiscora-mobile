@@ -49,4 +49,10 @@ class FirestoreUserRepository implements IUserRepository {
     if (_cachedUid == null) return;
     await _userDoc(_cachedUid!).update({'seeded': true});
   }
+
+  @override
+  Future<bool> isOnboarded(String uid) async => true; // unused legacy backend
+
+  @override
+  Future<void> markOnboarded(String uid) async {}
 }

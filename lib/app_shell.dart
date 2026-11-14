@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,8 @@ import 'features/investments/screens/investments_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
 import 'features/expenses/screens/review_inbox_screen.dart';
 import 'features/expenses/screens/add_expense_sheet.dart';
+import 'package:firebase_messaging/firebase_messaging.dart' show RemoteNotification;
+import 'core/services/push_service.dart';
 
 /// Top-level authenticated shell — holds the floating nav + 5 screens.
 /// Nav index → page:
@@ -45,10 +48,22 @@ class _AppShellState extends ConsumerState<AppShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initSmsCapture();
+    // Push alerts that arrive while the app is open (Android only shows them
+    // itself when the app is in the background).
+    _pushSub = PushService.instance.foregroundMessages.listen((n) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text([n.title, n.body].whereType<String>().join(': ')),
+        behavior: SnackBarBehavior.floating,
+      ));
+    });
   }
+
+  StreamSubscription<RemoteNotification>? _pushSub;
 
   @override
   void dispose() {
+    _pushSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
