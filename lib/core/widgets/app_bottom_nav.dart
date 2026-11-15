@@ -40,16 +40,47 @@ class AppBottomNav extends StatelessWidget {
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: const Color(0xFFE4E7EF), width: 0.5),
             ),
-            child: Row(
-              children: [
-                for (var i = 0; i < _items.length; i++)
-                  _NavItem(
-                    icon: _items[i].$1,
-                    label: _items[i].$2,
-                    isActive: currentIndex == i,
-                    onTap: () => onTap(i),
-                  ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final slotWidth = constraints.maxWidth / _items.length;
+                return Stack(
+                  children: [
+                    // One highlight pill that slides to the selected tab.
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOutCubic,
+                      left: currentIndex * slotWidth + 6,
+                      top: 6,
+                      width: slotWidth - 12,
+                      height: 50,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xF0F0F2F6),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryNavy.withOpacity(0.06),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        for (var i = 0; i < _items.length; i++)
+                          _NavItem(
+                            icon: _items[i].$1,
+                            label: _items[i].$2,
+                            isActive: currentIndex == i,
+                            onTap: () => onTap(i),
+                          ),
+                      ],
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -85,25 +116,25 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isActive ? const Color(0xF0F0F2F6) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, size: 22, color: color),
+              // The pill behind slides; icon and label just ease their colour.
+              TweenAnimationBuilder<Color?>(
+                duration: const Duration(milliseconds: 250),
+                tween: ColorTween(end: color),
+                builder: (context, c, _) => Icon(icon, size: 22, color: c),
               ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.fade,
-                softWrap: false,
+              const SizedBox(height: 3),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 250),
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                   color: color,
+                ),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
                 ),
               ),
             ],
