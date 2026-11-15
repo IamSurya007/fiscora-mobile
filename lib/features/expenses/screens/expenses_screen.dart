@@ -131,7 +131,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     final spent = <String, double>{};
     final spentBySub = <String, Map<String, double>>{};
     for (final e in monthExpenses) {
-      if (e.countsAsSpend) {
+      if (e.countsAsPersonalSpend) {
         spent[e.categoryId] = (spent[e.categoryId] ?? 0) + e.amount;
         if (e.subcategoryId.isNotEmpty) {
           final subs = spentBySub.putIfAbsent(e.categoryId, () => {});
@@ -143,7 +143,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     final totalBudgeted = budget.values
         .fold(0.0, (s, v) => s + ((v['limit'] as num?)?.toDouble() ?? 0.0));
     final totalSpent =
-        monthExpenses.where((e) => e.countsAsSpend).fold(
+        monthExpenses.where((e) => e.countsAsPersonalSpend).fold(
               0.0,
               (s, e) => s + e.amount,
             );

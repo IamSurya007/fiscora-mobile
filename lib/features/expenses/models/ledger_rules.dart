@@ -19,4 +19,22 @@ extension LedgerRules on Expense {
 
   /// Credits count as income whatever the spend flag says (that flag only affects debits).
   bool get countsAsIncome => amount < 0 && !isTransfer;
+
+  /// Business-scope entries are kept out of personal totals and budgets.
+  bool get isPersonal => scope != 'business';
+
+  /// Spend that counts towards personal totals and budgets (business excluded).
+  bool get countsAsPersonalSpend => countsAsSpend && isPersonal;
+
+  /// Income that counts towards personal totals (business revenue excluded).
+  bool get countsAsPersonalIncome => countsAsIncome && isPersonal;
 }
+
+/// Scope a new transaction gets when none is chosen: business accounts file
+/// as business, personal and mixed accounts default to personal.
+String defaultScopeFor(String? ownership) =>
+    ownership == 'business' ? 'business' : 'personal';
+
+/// Whether the add/edit form should offer a Personal/Business toggle.
+bool showsScopeToggle(String? ownership) =>
+    ownership == 'business' || ownership == 'mixed';
