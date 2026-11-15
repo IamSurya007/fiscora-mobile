@@ -47,6 +47,7 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
   final _nameController = TextEditingController();
   final _monthlyController = TextEditingController();
   final _institutionController = TextEditingController();
+  final _valueController = TextEditingController();
   final _durationController = TextEditingController();
   final _rateController = TextEditingController();
 
@@ -64,6 +65,7 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
           ? inv.monthlyAmount.toInt().toString()
           : inv.monthlyAmount.toString();
       _institutionController.text = inv.institution;
+      _valueController.text = inv.currentValue?.toStringAsFixed(0) ?? '';
       _durationController.text = inv.durationMonths.toString();
       _type = inv.type;
       _startDate = inv.startDate;
@@ -85,6 +87,7 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
     _nameController.dispose();
     _monthlyController.dispose();
     _institutionController.dispose();
+    _valueController.dispose();
     _durationController.dispose();
     _rateController.dispose();
     super.dispose();
@@ -146,6 +149,7 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
         startDate: _startDate,
         maturityDate: maturityDate,
         institution: _institutionController.text.trim(),
+        currentValue: double.tryParse(_valueController.text.replaceAll(',', '')),
       );
       ref
           .read(investmentNotifierProvider.notifier)
@@ -163,6 +167,7 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
         startDate: _startDate,
         maturityDate: maturityDate,
         institution: _institutionController.text.trim(),
+        currentValue: double.tryParse(_valueController.text.replaceAll(',', '')),
       );
       ref
           .read(investmentNotifierProvider.notifier)
@@ -252,6 +257,12 @@ class _AddInvestmentSheetState extends ConsumerState<AddInvestmentSheet> {
                 controller: _institutionController,
                 label: 'Institution',
                 hint: 'e.g. State Bank of India'),
+            const SizedBox(height: AppSpacing.sm),
+            _Field(
+                controller: _valueController,
+                label: 'Current value ₹ (optional)',
+                hint: 'Latest value from your statement',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true)),
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
