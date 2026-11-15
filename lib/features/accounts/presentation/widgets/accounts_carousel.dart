@@ -8,12 +8,14 @@ import '../../models/account_model.dart';
 import '../../services/account_providers.dart';
 import '../screens/add_edit_account_sheet.dart';
 import '../screens/account_detail_screen.dart';
+import '../../../../core/services/amount_privacy.dart';
 
 class AccountsCarousel extends ConsumerWidget {
   const AccountsCarousel({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hide = ref.watch(hideAmountsProvider);
     final accountsAsync = ref.watch(accountsStreamProvider);
     final fmt = NumberFormat('#,##,###');
 
@@ -73,6 +75,7 @@ class AccountsCarousel extends ConsumerWidget {
                   final cardColor = Color(account.colorValue);
 
                   return _AccountCard(
+                    hide: hide,
                     account: account,
                     cardColor: cardColor,
                     fmt: fmt,
@@ -117,8 +120,10 @@ class _AccountCard extends StatelessWidget {
   final Color cardColor;
   final NumberFormat fmt;
   final VoidCallback onTap;
+  final bool hide;
 
   const _AccountCard({
+    this.hide = false,
     required this.account,
     required this.cardColor,
     required this.fmt,
@@ -189,7 +194,7 @@ class _AccountCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '₹${fmt.format(account.currentBalance)}',
+                      maskAmount(hide, '₹${fmt.format(account.currentBalance)}'),
                       style: AppTextStyles.h2.copyWith(
                         color: Colors.white,
                         fontSize: 18,
@@ -199,7 +204,7 @@ class _AccountCard extends StatelessWidget {
                     if (isCredit && account.creditLimit > 0) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'Limit: ₹${fmt.format(account.creditLimit)}',
+                        hide ? 'Limit: ₹ ••••' : 'Limit: ₹${fmt.format(account.creditLimit)}',
                         style: AppTextStyles.caption.copyWith(
                           color: Colors.white.withOpacity(0.6),
                           fontSize: 9,

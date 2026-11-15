@@ -8,6 +8,7 @@ import '../../features/expenses/models/expense_model.dart';
 import '../../features/accounts/services/account_providers.dart';
 import '../../features/categories/services/category_providers.dart';
 import '../../features/categories/widgets/category_icon.dart';
+import '../services/amount_privacy.dart';
 
 /// Fold / Axio style transaction tile — compact collapsed state, rich expanded state on tap.
 class TransactionTile extends ConsumerStatefulWidget {
@@ -36,9 +37,11 @@ class _TransactionTileState extends ConsumerState<TransactionTile> {
     final isTransfer = expense.transferAccountId.isNotEmpty;
     // A transfer is never "excluded" in the spend sense; it just isn't spend.
     final isExcluded = !expense.isCountedAsSpend && !isTransfer;
-    final amountText = isTransfer
+    final hide = ref.watch(hideAmountsProvider);
+    final rawAmountText = isTransfer
         ? '₹${NumberFormat('#,##,###').format(expense.amount.abs())}'
         : '${isDebit ? '-' : '+'}₹${NumberFormat('#,##,###').format(expense.amount.abs())}';
+    final amountText = maskAmount(hide, rawAmountText);
 
     final accounts = ref.watch(accountsStreamProvider).valueOrNull ?? [];
     final matchingAccounts = accounts.where((a) => a.id == expense.accountId);

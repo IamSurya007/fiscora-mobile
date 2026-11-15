@@ -19,6 +19,7 @@ import '../../../ai_chat/screens/spendly_ai_chat_screen.dart';
 import '../../../networth/presentation/widgets/net_worth_card.dart';
 import '../widgets/balance_card.dart';
 import '../widgets/quick_actions.dart';
+import '../../../../core/services/amount_privacy.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final User user;
@@ -121,6 +122,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           ),
                         ],
                       ),
+                    ),
+                    // Hide amounts (privacy mode)
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final hidden = ref.watch(hideAmountsProvider);
+                        return IconButton(
+                          tooltip: hidden ? 'Show amounts' : 'Hide amounts',
+                          icon: Icon(
+                            hidden ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            color: AppColors.primaryNavy,
+                          ),
+                          onPressed: () => ref.read(hideAmountsProvider.notifier).state = !hidden,
+                        );
+                      },
                     ),
                     // AI Assistant Sparkle Button
                     GestureDetector(
