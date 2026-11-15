@@ -16,6 +16,7 @@ import '../../expenses/services/expense_providers.dart';
 import 'add_expense_sheet.dart';
 import '../models/ledger_rules.dart';
 import '../widgets/delete_with_undo.dart';
+import '../../bills/upcoming_bills_screen.dart';
 
 class ExpensesScreen extends ConsumerStatefulWidget {
   /// 0 = budget overview, 1 = transactions.
@@ -783,7 +784,21 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
                 AppSpacing.screenPadding,
                 0,
               ),
-              child: Text(widget.initialTab == 1 ? 'Transactions' : 'Budget', style: AppTextStyles.h1),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(widget.initialTab == 1 ? 'Transactions' : 'Budget', style: AppTextStyles.h1),
+                  ),
+                  IconButton(
+                    tooltip: 'Upcoming bills',
+                    icon: const Icon(Icons.event_note_rounded, color: AppColors.primaryNavy),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UpcomingBillsScreen()),
+                    ),
+                  ),
+                ],
+              ),
             ),
 
             // ── Tab bar ──────────────────────────────────────────────────

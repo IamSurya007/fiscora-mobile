@@ -18,6 +18,8 @@ class AccountCollection with SyncMetadataMixin {
   /// Balance before any recorded transaction; null until first computed.
   double? openingBalance;
   late double creditLimit;
+  int? statementDay;
+  int? dueDay;
   late int colorValue;
   late String iconName;
   late bool isArchived;
@@ -41,6 +43,8 @@ class AccountCollection with SyncMetadataMixin {
       ..currentBalance = account.currentBalance
       ..openingBalance = account.openingBalance
       ..creditLimit = account.creditLimit
+      ..statementDay = account.statementDay
+      ..dueDay = account.dueDay
       ..colorValue = account.colorValue
       ..iconName = account.iconName
       ..isArchived = account.isArchived
@@ -69,6 +73,8 @@ class AccountCollection with SyncMetadataMixin {
       currentBalance: currentBalance,
       openingBalance: openingBalance,
       creditLimit: creditLimit,
+      statementDay: statementDay,
+      dueDay: dueDay,
       colorValue: colorValue,
       iconName: iconName,
       isArchived: isArchived,
@@ -88,6 +94,8 @@ class AccountCollection with SyncMetadataMixin {
       'current_balance': currentBalance,
       'creditLimit': creditLimit,
       'credit_limit': creditLimit,
+      'statementDay': statementDay,
+      'dueDay': dueDay,
       'colorValue': colorValue,
       'color_value': colorValue,
       'iconName': iconName,

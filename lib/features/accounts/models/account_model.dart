@@ -63,6 +63,9 @@ class Account {
   /// from it. Null for accounts that predate derived balances.
   final double? openingBalance;
   final double creditLimit;    // For credit cards only
+  /// Credit cards: statement and payment-due day of month (1-31), if known.
+  final int? statementDay;
+  final int? dueDay;
   final int colorValue;
   final String iconName;
   final bool isArchived;
@@ -76,6 +79,8 @@ class Account {
     required this.currentBalance,
     this.openingBalance,
     this.creditLimit = 0.0,
+    this.statementDay,
+    this.dueDay,
     required this.colorValue,
     this.iconName = '',
     this.isArchived = false,
@@ -112,6 +117,8 @@ class Account {
       creditLimit: (json['creditLimit'] as num?)?.toDouble() ??
           (json['credit_limit'] as num?)?.toDouble() ??
           0.0,
+      statementDay: (json['statementDay'] as num?)?.toInt(),
+      dueDay: (json['dueDay'] as num?)?.toInt(),
       colorValue: (json['colorValue'] as num?)?.toInt() ??
           (json['color_value'] as num?)?.toInt() ??
           parsedType.defaultColor.value,
@@ -141,6 +148,8 @@ class Account {
     double? currentBalance,
     double? openingBalance,
     double? creditLimit,
+    int? statementDay,
+    int? dueDay,
     int? colorValue,
     String? iconName,
     bool? isArchived,
@@ -154,6 +163,8 @@ class Account {
       currentBalance: currentBalance ?? this.currentBalance,
       openingBalance: openingBalance ?? this.openingBalance,
       creditLimit: creditLimit ?? this.creditLimit,
+      statementDay: statementDay ?? this.statementDay,
+      dueDay: dueDay ?? this.dueDay,
       colorValue: colorValue ?? this.colorValue,
       iconName: iconName ?? this.iconName,
       isArchived: isArchived ?? this.isArchived,

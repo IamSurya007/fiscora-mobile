@@ -22,6 +22,7 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
   final _institutionController = TextEditingController();
   final _balanceController = TextEditingController();
   final _limitController = TextEditingController();
+  final _dueDayController = TextEditingController();
 
   AccountType _selectedType = AccountType.bank_account;
   int _selectedColor = AccountType.bank_account.defaultColor.value;
@@ -48,6 +49,7 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
       _balanceController.text = acc.currentBalance == acc.currentBalance.toInt()
           ? acc.currentBalance.toInt().toString()
           : acc.currentBalance.toString();
+      _dueDayController.text = acc.dueDay?.toString() ?? '';
       _limitController.text = acc.creditLimit == acc.creditLimit.toInt()
           ? acc.creditLimit.toInt().toString()
           : acc.creditLimit.toString();
@@ -62,7 +64,13 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
     _institutionController.dispose();
     _balanceController.dispose();
     _limitController.dispose();
+    _dueDayController.dispose();
     super.dispose();
+  }
+
+  int? _dueDay() {
+    final v = int.tryParse(_dueDayController.text.trim());
+    return v != null && v >= 1 && v <= 31 ? v : null;
   }
 
   Future<void> _save() async {
@@ -92,6 +100,7 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
         institution: _institutionController.text.trim(),
         currentBalance: balance,
         creditLimit: _selectedType == AccountType.credit_card ? limit : 0.0,
+        dueDay: _selectedType == AccountType.credit_card ? _dueDay() : null,
         colorValue: _selectedColor,
       );
       await notifier.updateAccount(updated);
@@ -109,6 +118,7 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
         institution: _institutionController.text.trim(),
         currentBalance: balance,
         creditLimit: _selectedType == AccountType.credit_card ? limit : 0.0,
+        dueDay: _selectedType == AccountType.credit_card ? _dueDay() : null,
         colorValue: _selectedColor,
         createdAt: DateTime.now(),
       );
@@ -319,6 +329,26 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
                 ],
               ],
             ),
+            if (_selectedType == AccountType.credit_card) ...[
+              const SizedBox(height: AppSpacing.md),
+              Text('Payment due day (1-31)', style: AppTextStyles.label),
+              const SizedBox(height: AppSpacing.xs),
+              TextField(
+                controller: _dueDayController,
+                keyboardType: TextInputType.number,
+                style: AppTextStyles.bodyMedium,
+                decoration: InputDecoration(
+                  hintText: 'e.g. 5 — shows the bill in Upcoming bills',
+                  filled: true,
+                  fillColor: AppColors.inputFill,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.borderLight),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
 
             // Color Accent Selector
