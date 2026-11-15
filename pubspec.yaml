@@ -78,6 +78,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   build_runner: ^2.4.9
   flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -93,6 +94,7 @@ flutter:
   assets:
     - assets/images/google_icon.svg
     - assets/images/app_icon.png
+    - assets/images/splash_logo.png
     - assets/fonts/
 
   # Inter bundled locally — zero network calls, fully offline.
@@ -157,3 +159,15 @@ flutter_launcher_icons:
     generate: false
   macos:
     generate: false
+
+# Native launch screen (before Flutter starts), incl. the Android 12+ splash API.
+# Regenerate with: dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#0A2540"
+  image: assets/images/splash_logo.png
+  android_12:
+    color: "#0A2540"
+    image: assets/images/splash_logo.png
+    icon_background_color: "#0A2540"
+  ios: true
+  web: false

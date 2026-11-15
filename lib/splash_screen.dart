@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_shell.dart';
-import 'core/constants/app_colors.dart';
 import 'core/models/user_profile.dart';
 import 'core/providers/repository_providers.dart';
 import 'core/services/seed_service.dart';
@@ -203,43 +202,77 @@ class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
 // Splash shown while Firebase initialises / seeding runs
 // ─────────────────────────────────────────────
 
-class _SplashScreen extends StatelessWidget {
+/// Shown while post-sign-in setup runs. Continues the native launch screen
+/// (same navy and logo), then eases in the wordmark and a slim progress bar
+/// so the hand-off from the system splash is seamless.
+class _SplashScreen extends StatefulWidget {
   const _SplashScreen();
 
   @override
+  State<_SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<_SplashScreen> with SingleTickerProviderStateMixin {
+  static const _navy = Color(0xFF0A2540);
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..forward();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final logoScale = Tween(begin: 1.0, end: 0.86)
+        .animate(CurvedAnimation(parent: _c, curve: const Interval(0, 0.6, curve: Curves.easeOutCubic)));
+    final textFade = CurvedAnimation(parent: _c, curve: const Interval(0.35, 1, curve: Curves.easeOut));
+
     return Scaffold(
-      backgroundColor: AppColors.primaryNavy,
+      backgroundColor: _navy,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'S',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 52,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -2,
-              ),
+            ScaleTransition(
+              scale: reduceMotion ? const AlwaysStoppedAnimation(0.86) : logoScale,
+              child: Image.asset('assets/images/splash_logo.png', width: 220, height: 220),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'FISCORA',
-              style: TextStyle(
-                color: Color(0xFFF5C518),
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 4,
-              ),
-            ),
-            const SizedBox(height: 40),
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white.withValues(alpha: 0.5),
+            FadeTransition(
+              opacity: reduceMotion ? const AlwaysStoppedAnimation(1.0) : textFade,
+              child: Column(
+                children: [
+                  const Text(
+                    'Fiscora',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Your money, in one place',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: 120,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        minHeight: 3,
+                        color: const Color(0xFF007BFF),
+                        backgroundColor: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
