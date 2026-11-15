@@ -18,6 +18,7 @@ import 'features/expenses/screens/review_inbox_screen.dart';
 import 'features/expenses/screens/add_expense_sheet.dart';
 import 'package:firebase_messaging/firebase_messaging.dart' show RemoteNotification;
 import 'core/services/push_service.dart';
+import 'core/services/privacy_service.dart';
 
 /// Top-level authenticated shell — holds the floating nav + 5 screens.
 /// Nav index → page:
@@ -48,6 +49,7 @@ class _AppShellState extends ConsumerState<AppShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initSmsCapture();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askConsentIfMissing());
     // Push alerts that arrive while the app is open (Android only shows them
     // itself when the app is in the background).
     _pushSub = PushService.instance.foregroundMessages.listen((n) {
@@ -60,6 +62,61 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   StreamSubscription<RemoteNotification>? _pushSub;
+
+  /// Users who joined before the privacy notice existed skip onboarding, so
+  /// ask them once here (DPDP: consent must be recorded per notice version).
+  Future<void> _askConsentIfMissing() async {
+    // Give a consent sent during onboarding time to reach the server first.
+    await Future.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
+    final privacy = PrivacyService(ref.read(syncApiClientProvider));
+    if (!await privacy.needsConsent() || !mounted) return;
+    var adult = false;
+    var agreed = false;
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Your data in Fiscora'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Fiscora reads bank and card SMS to record transactions. Messages are parsed on this phone; '
+                  'only transaction details are synced to your account. OTPs and personal messages are never '
+                  'uploaded, and your data is never sold. You can download or delete it from Profile.',
+                ),
+                CheckboxListTile(
+                  value: agreed,
+                  onChanged: (v) => setLocal(() => agreed = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('I agree to this use of my transaction data'),
+                ),
+                CheckboxListTile(
+                  value: adult,
+                  onChanged: (v) => setLocal(() => adult = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('I am 18 or older'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: agreed && adult ? () => Navigator.pop(ctx, true) : null,
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) await privacy.recordConsent(widget.user.uid);
+  }
 
   @override
   void dispose() {

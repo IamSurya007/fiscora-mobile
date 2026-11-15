@@ -56,6 +56,19 @@ class PrivacyService {
     }
   }
 
+  /// True when the server has no consent for the current notice version
+  /// (existing users skipped onboarding, or the notice changed). False when
+  /// offline, so the prompt never blocks using the app.
+  Future<bool> needsConsent() async {
+    try {
+      final res = await api.dio.get('/users/me');
+      final data = res.data;
+      return data is Map && data['consentVersion'] != consentVersion;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Downloads everything the server stores for the user and opens the share
   /// sheet with it as a JSON file.
   Future<void> exportMyData() async {
