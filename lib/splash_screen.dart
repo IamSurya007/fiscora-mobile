@@ -17,6 +17,7 @@ import 'core/sync/collections/user_profile_collection.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:isar_plus/isar_plus.dart';
 import 'core/services/push_service.dart';
+import 'core/services/privacy_service.dart';
 import 'features/onboarding/onboarding_screen.dart';
 
 class AuthGate extends ConsumerWidget {
@@ -180,6 +181,9 @@ class _AuthenticatedAppState extends ConsumerState<_AuthenticatedApp> {
     // Budget alerts and reminders from the server (not awaited: the prompt
     // must not hold the splash screen).
     unawaited(PushService.instance.register(syncClient));
+
+    // Consent from onboarding that failed to reach the server last time.
+    unawaited(PrivacyService(syncClient).retryPendingConsent(widget.user.uid));
   }
 
   @override
