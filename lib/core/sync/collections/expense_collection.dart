@@ -24,6 +24,7 @@ class ExpenseCollection with SyncMetadataMixin {
   late DateTime createdAt;
   bool isCountedAsSpend = true;
   bool needsReview = false;
+  String scope = 'personal';
 
   ExpenseCollection();
 
@@ -51,7 +52,8 @@ class ExpenseCollection with SyncMetadataMixin {
       ..transferAccountId = expense.transferAccountId
       ..createdAt = expense.createdAt
       ..isCountedAsSpend = expense.isCountedAsSpend
-      ..needsReview = expense.needsReview;
+      ..needsReview = expense.needsReview
+      ..scope = expense.scope;
 
     col.clientId = expense.id;
     col.serverId = serverId;
@@ -86,6 +88,7 @@ class ExpenseCollection with SyncMetadataMixin {
       createdAt: createdAt,
       isCountedAsSpend: isCountedAsSpend,
       needsReview: needsReview,
+      scope: scope,
     );
   }
 
@@ -107,6 +110,7 @@ class ExpenseCollection with SyncMetadataMixin {
       'isCountedAsSpend': isCountedAsSpend,
       'is_counted_as_spend': isCountedAsSpend,
       'needsReview': needsReview,
+      'scope': scope,
     };
   }
 }

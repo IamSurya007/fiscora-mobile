@@ -39,6 +39,9 @@ class Expense {
   /// review inbox until approved, edited or deleted.
   final bool needsReview;
 
+  /// 'personal' or 'business' (owners/freelancers using one account for both).
+  final String scope;
+
   const Expense({
     required this.id,
     required this.amount,
@@ -56,6 +59,7 @@ class Expense {
     required this.createdAt,
     this.isCountedAsSpend = true,
     this.needsReview = false,
+    this.scope = 'personal',
   });
 
   factory Expense.fromJson(
@@ -106,6 +110,7 @@ class Expense {
       createdAt: parseDate(json['createdAt']),
       isCountedAsSpend: parsedCountAsSpend ?? defaultIsCountedAsSpend ?? true,
       needsReview: json['needsReview'] as bool? ?? false,
+      scope: json['scope'] as String? ?? 'personal',
     );
   }
 
@@ -125,6 +130,7 @@ class Expense {
         'createdAt': Timestamp.fromDate(createdAt),
         'isCountedAsSpend': isCountedAsSpend,
         'needsReview': needsReview,
+        'scope': scope,
       };
 
   Expense copyWith({
@@ -144,6 +150,7 @@ class Expense {
     DateTime? createdAt,
     bool? isCountedAsSpend,
     bool? needsReview,
+    String? scope,
   }) {
     return Expense(
       id: id ?? this.id,
@@ -162,6 +169,7 @@ class Expense {
       createdAt: createdAt ?? this.createdAt,
       isCountedAsSpend: isCountedAsSpend ?? this.isCountedAsSpend,
       needsReview: needsReview ?? this.needsReview,
+      scope: scope ?? this.scope,
     );
   }
 }

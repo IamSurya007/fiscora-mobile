@@ -66,6 +66,9 @@ class Account {
   /// Credit cards: statement and payment-due day of month (1-31), if known.
   final int? statementDay;
   final int? dueDay;
+
+  /// 'personal', 'business' or 'mixed' (used for both).
+  final String ownership;
   final int colorValue;
   final String iconName;
   final bool isArchived;
@@ -81,6 +84,7 @@ class Account {
     this.creditLimit = 0.0,
     this.statementDay,
     this.dueDay,
+    this.ownership = 'personal',
     required this.colorValue,
     this.iconName = '',
     this.isArchived = false,
@@ -119,6 +123,7 @@ class Account {
           0.0,
       statementDay: (json['statementDay'] as num?)?.toInt(),
       dueDay: (json['dueDay'] as num?)?.toInt(),
+      ownership: json['ownership'] as String? ?? 'personal',
       colorValue: (json['colorValue'] as num?)?.toInt() ??
           (json['color_value'] as num?)?.toInt() ??
           parsedType.defaultColor.value,
@@ -150,6 +155,7 @@ class Account {
     double? creditLimit,
     int? statementDay,
     int? dueDay,
+    String? ownership,
     int? colorValue,
     String? iconName,
     bool? isArchived,
@@ -165,6 +171,7 @@ class Account {
       creditLimit: creditLimit ?? this.creditLimit,
       statementDay: statementDay ?? this.statementDay,
       dueDay: dueDay ?? this.dueDay,
+      ownership: ownership ?? this.ownership,
       colorValue: colorValue ?? this.colorValue,
       iconName: iconName ?? this.iconName,
       isArchived: isArchived ?? this.isArchived,

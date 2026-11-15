@@ -20,6 +20,7 @@ class AccountCollection with SyncMetadataMixin {
   late double creditLimit;
   int? statementDay;
   int? dueDay;
+  String ownership = 'personal';
   late int colorValue;
   late String iconName;
   late bool isArchived;
@@ -45,6 +46,7 @@ class AccountCollection with SyncMetadataMixin {
       ..creditLimit = account.creditLimit
       ..statementDay = account.statementDay
       ..dueDay = account.dueDay
+      ..ownership = account.ownership
       ..colorValue = account.colorValue
       ..iconName = account.iconName
       ..isArchived = account.isArchived
@@ -75,6 +77,7 @@ class AccountCollection with SyncMetadataMixin {
       creditLimit: creditLimit,
       statementDay: statementDay,
       dueDay: dueDay,
+      ownership: ownership,
       colorValue: colorValue,
       iconName: iconName,
       isArchived: isArchived,
@@ -96,6 +99,7 @@ class AccountCollection with SyncMetadataMixin {
       'credit_limit': creditLimit,
       'statementDay': statementDay,
       'dueDay': dueDay,
+      'ownership': ownership,
       'colorValue': colorValue,
       'color_value': colorValue,
       'iconName': iconName,
