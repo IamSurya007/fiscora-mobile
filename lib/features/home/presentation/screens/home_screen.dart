@@ -16,6 +16,7 @@ import '../../../investments/services/investment_providers.dart';
 import '../../../../core/services/excel_export_service.dart';
 import '../../../accounts/presentation/widgets/accounts_carousel.dart';
 import '../../../ai_chat/screens/spendly_ai_chat_screen.dart';
+import '../../../networth/presentation/widgets/net_worth_card.dart';
 import '../widgets/balance_card.dart';
 import '../widgets/quick_actions.dart';
 
@@ -189,6 +190,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
             // ── Review inbox banner (only when something needs a look) ──
             const SliverToBoxAdapter(child: _ReviewBanner()),
+
+            // ── Net worth ─────────────────────────────
+            const SliverToBoxAdapter(child: NetWorthCard()),
   
             const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
 
