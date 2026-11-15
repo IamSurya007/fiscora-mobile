@@ -28,6 +28,9 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
   int _selectedColor = AccountType.bank_account.defaultColor.value;
   bool _isSaving = false;
 
+  /// Who the account belongs to: personal, business, or mixed (asks per capture).
+  String _ownership = 'personal';
+
   final List<int> _colorPalette = const [
     0xFF1E3A8A, // Navy
     0xFF0284C7, // Cyan / Blue
@@ -55,6 +58,7 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
           : acc.creditLimit.toString();
       _selectedType = acc.type;
       _selectedColor = acc.colorValue;
+      _ownership = acc.ownership;
     }
   }
 
@@ -102,6 +106,7 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
         creditLimit: _selectedType == AccountType.credit_card ? limit : 0.0,
         dueDay: _selectedType == AccountType.credit_card ? _dueDay() : null,
         colorValue: _selectedColor,
+        ownership: _ownership,
       );
       await notifier.updateAccount(updated);
       // Only an edited balance field moves the balance. Comparing with the value
@@ -120,6 +125,7 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
         creditLimit: _selectedType == AccountType.credit_card ? limit : 0.0,
         dueDay: _selectedType == AccountType.credit_card ? _dueDay() : null,
         colorValue: _selectedColor,
+        ownership: _ownership,
         createdAt: DateTime.now(),
       );
       await notifier.addAccount(newAccount);
@@ -349,6 +355,34 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
                 ),
               ),
             ],
+            const SizedBox(height: AppSpacing.md),
+
+            // Ownership: decides the default scope of its transactions
+            Text('Used for', style: AppTextStyles.label),
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (value, label) in const [
+                  ('personal', 'Personal'),
+                  ('business', 'Business'),
+                  ('mixed', 'Mixed'),
+                ])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: _ownership == value,
+                    onSelected: (_) => setState(() => _ownership = value),
+                  ),
+              ],
+            ),
+            if (_ownership == 'mixed')
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Captures from this account ask personal or business.',
+                  style: AppTextStyles.caption,
+                ),
+              ),
             const SizedBox(height: AppSpacing.md),
 
             // Color Accent Selector

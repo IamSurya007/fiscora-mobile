@@ -3,6 +3,7 @@ import '../../features/categories/models/category.dart';
 import '../../features/categories/services/category_resolver.dart';
 import '../../features/categories/services/merchant_categorizer.dart';
 import '../../features/expenses/models/expense_model.dart';
+import '../../features/expenses/models/ledger_rules.dart';
 import '../repositories/i_account_repository.dart';
 import '../repositories/i_expense_repository.dart';
 import 'sms_account_resolver.dart';
@@ -80,6 +81,7 @@ class SmsImportService {
     if (cardPayment.skip) return null;
     if (cardPayment.upgraded != null) return cardPayment.upgraded;
     final isCardPayment = cardPayment.toCardId != null || cardPayment.cardSide;
+    final account = await _accountRepo.getAccount(accountId);
 
     final expense = Expense(
       id: txn.dedupKey,
@@ -100,6 +102,7 @@ class SmsImportService {
       merchant: txn.merchant,
       accountId: accountId,
       createdAt: DateTime.now(),
+      scope: defaultScopeFor(account?.ownership),
     );
 
     await _expenseRepo.addExpense(expense);

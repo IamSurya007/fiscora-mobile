@@ -116,23 +116,23 @@ final expenseNotifierProvider =
   return ExpenseNotifier(ref.watch(expenseRepositoryProvider));
 });
 
-/// Computed: total income (credits, excluding transfers) for the current month.
+/// Computed: personal income (credits, excluding transfers and business) for the current month.
 final monthlyIncomeProvider = Provider<double>((ref) {
   final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? [];
   final now = DateTime.now();
   return expenses
       .where((e) => e.date.year == now.year && e.date.month == now.month)
-      .where((e) => e.countsAsIncome) // negative = credit/income
+      .where((e) => e.countsAsPersonalIncome) // business revenue excluded
       .fold(0.0, (sum, e) => sum + e.amount.abs());
 });
 
-/// Computed: total counted spends for the current month (excludes transfers and isCountedAsSpend=false).
+/// Computed: personal counted spends for the current month (excludes transfers, business and isCountedAsSpend=false).
 final monthlyExpensesProvider = Provider<double>((ref) {
   final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? [];
   final now = DateTime.now();
   return expenses
       .where((e) => e.date.year == now.year && e.date.month == now.month)
-      .where((e) => e.countsAsSpend)
+      .where((e) => e.countsAsPersonalSpend)
       .fold(0.0, (sum, e) => sum + e.amount);
 });
 

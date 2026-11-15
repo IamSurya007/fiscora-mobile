@@ -17,6 +17,7 @@ import '../../../splash_screen.dart';
 import '../../auth/presentation/screens/conflict_resolution_screen.dart';
 import '../../categories/screens/manage_categories_screen.dart';
 import '../../categories/screens/merchant_rules_screen.dart';
+import '../../business/business_pnl_screen.dart';
 import '../../../core/sync/sync_engine.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -499,6 +500,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const MerchantRulesScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.storefront_rounded,
+                    label: 'Business',
+                    sublabel: 'Profit & loss, owner draws and what the business owes you',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BusinessPnlScreen()),
                       );
                     },
                   ),

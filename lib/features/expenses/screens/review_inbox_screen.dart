@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/transaction_tile.dart';
+import '../../accounts/services/account_providers.dart';
 import '../models/expense_model.dart';
 import '../services/expense_providers.dart';
 import 'add_expense_sheet.dart';
@@ -82,6 +83,17 @@ class _ReviewItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(expenseNotifierProvider.notifier);
+    final accounts = ref.watch(accountsStreamProvider).valueOrNull ?? const [];
+    final isMixed = accounts.any((a) => a.id == expense.accountId && a.ownership == 'mixed');
+    final tile = TransactionTile(
+      expense: expense,
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => AddExpenseSheet(expense: expense),
+      ),
+    );
     return Dismissible(
       key: ValueKey('review-${expense.id}'),
       background: _swipeBackground(
@@ -103,15 +115,34 @@ class _ReviewItem extends ConsumerWidget {
         }
         await deleteWithUndo(context, ref, expense);
       },
-      child: TransactionTile(
-        expense: expense,
-        onTap: () => showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (_) => AddExpenseSheet(expense: expense),
-        ),
-      ),
+      child: isMixed
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                tile,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.screenPadding, 0, AppSpacing.screenPadding, AppSpacing.sm),
+                  child: Row(
+                    children: [
+                      Expanded(child: _scopeButton(notifier, 'personal', 'Personal')),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(child: _scopeButton(notifier, 'business', 'Business')),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : tile,
+    );
+  }
+
+  /// Captures from a mixed account: one tap files it and approves it.
+  Widget _scopeButton(ExpenseNotifier notifier, String scope, String label) {
+    return OutlinedButton(
+      key: ValueKey('scope-$scope-${expense.id}'),
+      onPressed: () => notifier.updateExpense(expense.copyWith(scope: scope, needsReview: false)),
+      child: Text(label),
     );
   }
 

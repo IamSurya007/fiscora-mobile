@@ -15,6 +15,7 @@ import '../../categories/services/merchant_categorizer.dart';
 import '../../categories/widgets/category_icon.dart';
 import '../../categories/widgets/category_picker_sheet.dart';
 import '../models/expense_model.dart';
+import '../models/ledger_rules.dart';
 import '../services/expense_providers.dart';
 import '../../accounts/models/account_model.dart';
 
@@ -61,6 +62,9 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
   String? _transferToId;
   bool _isCountedAsSpend = true;
 
+  /// Personal or business; null until chosen, then the account's default applies.
+  String? _scope;
+
   final List<String> _methods = ['cash', 'upi', 'card'];
   final List<IconData> _methodIcons = [
     Icons.payments_rounded,
@@ -85,6 +89,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       _isTransfer = exp.transferAccountId.isNotEmpty;
       _transferToId = _isTransfer ? exp.transferAccountId : null;
       _isCountedAsSpend = exp.isCountedAsSpend;
+      _scope = exp.scope;
     } else {
       if (widget.prefilledAmount != null && widget.prefilledAmount! > 0) {
         final amount = widget.prefilledAmount!;
@@ -129,6 +134,39 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
   /// "Cash Spend" saves to [_cashAccountId], which used to be referenced but
   /// never created, so cash spends changed no balance and showed under no
   /// account. Create it on first use.
+  String _defaultScope(List<Account> accounts, String accountId) {
+    final account = accounts.where((a) => a.id == accountId).firstOrNull;
+    return defaultScopeFor(account?.ownership);
+  }
+
+  /// Personal/Business choice, offered only on business or mixed accounts.
+  Widget _scopeToggle() {
+    final accounts = ref.watch(accountsStreamProvider).valueOrNull ?? const <Account>[];
+    if (accounts.isEmpty) return const SizedBox.shrink();
+    final accountId = _selectedAccountId ?? accounts.first.id;
+    final account = accounts.where((a) => a.id == accountId).firstOrNull;
+    if (!showsScopeToggle(account?.ownership)) return const SizedBox.shrink();
+    final scope = _scope ?? defaultScopeFor(account?.ownership);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Row(
+        children: [
+          Text('For', style: AppTextStyles.label),
+          const SizedBox(width: AppSpacing.sm),
+          for (final option in const ['personal', 'business'])
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(option == 'personal' ? 'Personal' : 'Business'),
+                selected: scope == option,
+                onSelected: (_) => setState(() => _scope = option),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _ensureCashAccount() async {
     final repo = ref.read(accountRepositoryProvider);
     if (await repo.getAccount(_cashAccountId) != null) return;
@@ -187,6 +225,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       selection = const CategorySelection('transfers', 'transfers.self');
     }
     final label = registry.label(selection.categoryId, selection.subcategoryId, isCredit: _isCredit);
+    final scope = _scope ?? _defaultScope(shownAccounts, targetAccountId);
 
     final oldExpense = widget.expense;
     if (oldExpense != null) {
@@ -202,6 +241,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         accountId: targetAccountId,
         transferAccountId: _isTransfer ? _transferToId! : '',
         isCountedAsSpend: _isTransfer ? false : _isCountedAsSpend,
+        scope: scope,
         needsReview: false, // saving an edit confirms the transaction
       );
 
@@ -285,6 +325,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         transferAccountId: _isTransfer ? _transferToId! : '',
         createdAt: DateTime.now(),
         isCountedAsSpend: _isTransfer ? false : _isCountedAsSpend,
+        scope: scope,
       );
 
       // Remember an explicit choice for this merchant (not a guess).
@@ -513,6 +554,8 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
             },
           ),
           const SizedBox(height: AppSpacing.md),
+
+          if (!_isTransfer) _scopeToggle(),
 
           if (_isTransfer) ...[
             Text('To', style: AppTextStyles.label),
