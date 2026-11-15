@@ -62,6 +62,9 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
   String? _transferToId;
   bool _isCountedAsSpend = true;
 
+  /// Budgets count this cost over this many months (yearly premium -> 12).
+  int _spreadMonths = 1;
+
   /// Personal or business; null until chosen, then the account's default applies.
   String? _scope;
 
@@ -89,6 +92,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
       _isTransfer = exp.transferAccountId.isNotEmpty;
       _transferToId = _isTransfer ? exp.transferAccountId : null;
       _isCountedAsSpend = exp.isCountedAsSpend;
+      _spreadMonths = exp.spreadMonths;
       _scope = exp.scope;
     } else {
       if (widget.prefilledAmount != null && widget.prefilledAmount! > 0) {
@@ -241,6 +245,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         accountId: targetAccountId,
         transferAccountId: _isTransfer ? _transferToId! : '',
         isCountedAsSpend: _isTransfer ? false : _isCountedAsSpend,
+        spreadMonths: (_isTransfer || _isCredit) ? 1 : _spreadMonths,
         scope: scope,
         needsReview: false, // saving an edit confirms the transaction
       );
@@ -325,6 +330,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         transferAccountId: _isTransfer ? _transferToId! : '',
         createdAt: DateTime.now(),
         isCountedAsSpend: _isTransfer ? false : _isCountedAsSpend,
+        spreadMonths: (_isTransfer || _isCredit) ? 1 : _spreadMonths,
         scope: scope,
       );
 
@@ -745,6 +751,24 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
           const SizedBox(height: AppSpacing.md),
 
           if (!_isTransfer)
+          // ── Spread a big cost over several months' budgets ─────
+          if (!_isTransfer && !_isCredit) ...[
+            Text('Count in budgets over', style: AppTextStyles.label),
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (months, label) in const [(1, 'This month'), (3, '3 months'), (6, '6 months'), (12, '12 months')])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: _spreadMonths == months,
+                    onSelected: (_) => setState(() => _spreadMonths = months),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+
           // ── Spend / Income classification toggle ──────────────
           Container(
             padding: const EdgeInsets.symmetric(
