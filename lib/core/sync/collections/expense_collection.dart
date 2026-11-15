@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:isar_plus/isar_plus.dart';
 import '../../../../features/categories/services/category_resolver.dart';
 import '../../../../features/expenses/models/expense_model.dart';
@@ -25,6 +26,9 @@ class ExpenseCollection with SyncMetadataMixin {
   bool isCountedAsSpend = true;
   bool needsReview = false;
   String scope = 'personal';
+  /// SplitLine list as JSON ('' = not split).
+  String splitsJson = '';
+  int spreadMonths = 1;
 
   ExpenseCollection();
 
@@ -53,7 +57,9 @@ class ExpenseCollection with SyncMetadataMixin {
       ..createdAt = expense.createdAt
       ..isCountedAsSpend = expense.isCountedAsSpend
       ..needsReview = expense.needsReview
-      ..scope = expense.scope;
+      ..scope = expense.scope
+      ..splitsJson = expense.splits.isEmpty ? '' : jsonEncode(expense.splits.map((l) => l.toJson()).toList())
+      ..spreadMonths = expense.spreadMonths;
 
     col.clientId = expense.id;
     col.serverId = serverId;
@@ -89,6 +95,8 @@ class ExpenseCollection with SyncMetadataMixin {
       isCountedAsSpend: isCountedAsSpend,
       needsReview: needsReview,
       scope: scope,
+      splits: splitsJson.isEmpty ? const [] : SplitLine.listFrom(jsonDecode(splitsJson)),
+      spreadMonths: spreadMonths,
     );
   }
 
@@ -111,6 +119,8 @@ class ExpenseCollection with SyncMetadataMixin {
       'is_counted_as_spend': isCountedAsSpend,
       'needsReview': needsReview,
       'scope': scope,
+      'splits': splitsJson.isEmpty ? <dynamic>[] : jsonDecode(splitsJson),
+      'spreadMonths': spreadMonths,
     };
   }
 }

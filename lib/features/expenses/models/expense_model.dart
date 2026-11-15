@@ -42,6 +42,12 @@ class Expense {
   /// 'personal' or 'business' (owners/freelancers using one account for both).
   final String scope;
 
+  /// Category lines of a split transaction (amounts add up to |amount|).
+  final List<SplitLine> splits;
+
+  /// Budgets count this cost over this many months (1 = only the month paid).
+  final int spreadMonths;
+
   const Expense({
     required this.id,
     required this.amount,
@@ -60,6 +66,8 @@ class Expense {
     this.isCountedAsSpend = true,
     this.needsReview = false,
     this.scope = 'personal',
+    this.splits = const [],
+    this.spreadMonths = 1,
   });
 
   factory Expense.fromJson(
@@ -111,6 +119,8 @@ class Expense {
       isCountedAsSpend: parsedCountAsSpend ?? defaultIsCountedAsSpend ?? true,
       needsReview: json['needsReview'] as bool? ?? false,
       scope: json['scope'] as String? ?? 'personal',
+      splits: SplitLine.listFrom(json['splits']),
+      spreadMonths: (json['spreadMonths'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -131,6 +141,8 @@ class Expense {
         'isCountedAsSpend': isCountedAsSpend,
         'needsReview': needsReview,
         'scope': scope,
+        'splits': splits.map((l) => l.toJson()).toList(),
+        'spreadMonths': spreadMonths,
       };
 
   Expense copyWith({
@@ -151,6 +163,8 @@ class Expense {
     bool? isCountedAsSpend,
     bool? needsReview,
     String? scope,
+    List<SplitLine>? splits,
+    int? spreadMonths,
   }) {
     return Expense(
       id: id ?? this.id,
@@ -170,6 +184,35 @@ class Expense {
       isCountedAsSpend: isCountedAsSpend ?? this.isCountedAsSpend,
       needsReview: needsReview ?? this.needsReview,
       scope: scope ?? this.scope,
+      splits: splits ?? this.splits,
+      spreadMonths: spreadMonths ?? this.spreadMonths,
     );
+  }
+}
+
+/// One category line of a split transaction.
+class SplitLine {
+  final String categoryId;
+  final String subcategoryId;
+  final double amount;
+  const SplitLine({required this.categoryId, this.subcategoryId = '', required this.amount});
+
+  Map<String, dynamic> toJson() => {
+        'categoryId': categoryId,
+        if (subcategoryId.isNotEmpty) 'subcategoryId': subcategoryId,
+        'amount': amount,
+      };
+
+  static List<SplitLine> listFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final l in raw)
+        if (l is Map && l['categoryId'] is String)
+          SplitLine(
+            categoryId: l['categoryId'] as String,
+            subcategoryId: l['subcategoryId'] as String? ?? '',
+            amount: (l['amount'] as num? ?? 0).toDouble(),
+          ),
+    ];
   }
 }

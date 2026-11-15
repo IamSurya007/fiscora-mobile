@@ -38,3 +38,26 @@ String defaultScopeFor(String? ownership) =>
 /// Whether the add/edit form should offer a Personal/Business toggle.
 bool showsScopeToggle(String? ownership) =>
     ownership == 'business' || ownership == 'mixed';
+
+/// Mirrors budgetParts in fiscora-api/src/utils/ledger.ts: the parent-category
+/// amounts of a transaction that count in [month]'s budgets. Split
+/// transactions count in each of their categories; spread ones count 1/n in
+/// each of n months from the month paid. Balances are unaffected.
+extension BudgetParts on Expense {
+  Map<String, double> budgetPartsFor(DateTime month) {
+    if (!countsAsPersonalSpend) return const {};
+    final n = spreadMonths < 1 ? 1 : spreadMonths;
+    final index = (month.year - date.year) * 12 + (month.month - date.month);
+    if (index < 0 || index >= n) return const {};
+    final share = amount / n;
+    final lines = splits.where((l) => l.amount > 0).toList();
+    if (lines.isEmpty) return {categoryId.split('.').first: share};
+    final total = lines.fold(0.0, (s, l) => s + l.amount);
+    final out = <String, double>{};
+    for (final l in lines) {
+      final parent = l.categoryId.split('.').first;
+      out[parent] = (out[parent] ?? 0) + share * l.amount / total;
+    }
+    return out;
+  }
+}

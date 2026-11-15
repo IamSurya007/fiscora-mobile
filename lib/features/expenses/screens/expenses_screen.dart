@@ -130,7 +130,17 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     final registry = ref.watch(categoryRegistryProvider);
     final spent = <String, double>{};
     final spentBySub = <String, Map<String, double>>{};
+    // Split and spread transactions (possibly paid in earlier months) count
+    // their share towards this month's budgets.
+    final allForBudgets = ref.read(expensesStreamProvider).valueOrNull ?? monthExpenses;
+    for (final e in allForBudgets) {
+      if (e.splits.isEmpty && e.spreadMonths <= 1) continue;
+      for (final part in e.budgetPartsFor(_selectedMonth).entries) {
+        spent[part.key] = (spent[part.key] ?? 0) + part.value;
+      }
+    }
     for (final e in monthExpenses) {
+      if (e.splits.isNotEmpty || e.spreadMonths > 1) continue; // counted above
       if (e.countsAsPersonalSpend) {
         spent[e.categoryId] = (spent[e.categoryId] ?? 0) + e.amount;
         if (e.subcategoryId.isNotEmpty) {
