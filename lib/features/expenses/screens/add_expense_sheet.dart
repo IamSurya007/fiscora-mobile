@@ -419,9 +419,10 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
           ),
           const SizedBox(height: AppSpacing.md),
 
-          // Title and Segmented Control
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Title, then a full-width Expense / Income / Transfer switch. They
+          // used to share one row, which overflowed with the longer titles.
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 _isTransfer
@@ -431,6 +432,7 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
                         : (_isCredit ? 'Add Income' : 'Add Expense'),
                 style: AppTextStyles.h2,
               ),
+              const SizedBox(height: AppSpacing.sm),
               Container(
                 decoration: BoxDecoration(
                   color: AppColors.inputFill,
@@ -439,9 +441,9 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
                 padding: const EdgeInsets.all(2),
                 child: Row(
                   children: [
-                    _typeTab(label: 'Expense', isSelected: !_isCredit && !_isTransfer, isCredit: false),
-                    _typeTab(label: 'Income', isSelected: _isCredit && !_isTransfer, isCredit: true),
-                    _transferTab(),
+                    Expanded(child: _typeTab(label: 'Expense', isSelected: !_isCredit && !_isTransfer, isCredit: false)),
+                    Expanded(child: _typeTab(label: 'Income', isSelected: _isCredit && !_isTransfer, isCredit: true)),
+                    Expanded(child: _transferTab()),
                   ],
                 ),
               ),
@@ -907,7 +909,8 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         _selection = null;
       }),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: _isTransfer ? AppColors.primaryNavy : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -968,7 +971,8 @@ class _AddExpenseSheetState extends ConsumerState<AddExpenseSheet> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? (isCredit ? AppColors.incomeGreen : AppColors.expenseRed)
