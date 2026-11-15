@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +9,8 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/providers/repository_providers.dart';
+import '../../core/services/privacy_service.dart';
 import '../accounts/services/account_providers.dart';
 import '../expenses/screens/sms_scan_sheet.dart';
 
@@ -25,6 +30,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _pages = PageController();
   int _page = 0;
   bool _consented = false;
+  bool _isAdult = false;
   bool _smsGranted = false;
 
   void _next() {
@@ -33,6 +39,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       return;
     }
     _pages.nextPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+  }
+
+  /// Records consent on the server without holding up onboarding; a failure
+  /// is retried on the next launch.
+  void _acceptPrivacy() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      unawaited(PrivacyService(ref.read(syncApiClientProvider)).recordConsent(uid));
+    }
+    _next();
   }
 
   Future<void> _askSms() async {
@@ -121,7 +137,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             title: Text('I agree to Fiscora processing my transaction data as described above.',
                 style: AppTextStyles.bodySmall),
           ),
-          _PrimaryButton(label: 'Continue', onPressed: _consented ? _next : null),
+          CheckboxListTile(
+            value: _isAdult,
+            onChanged: (v) => setState(() => _isAdult = v ?? false),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text('I confirm I am 18 years of age or older.', style: AppTextStyles.bodySmall),
+          ),
+          _PrimaryButton(label: 'Continue', onPressed: _consented && _isAdult ? _acceptPrivacy : null),
         ],
       ),
     );
