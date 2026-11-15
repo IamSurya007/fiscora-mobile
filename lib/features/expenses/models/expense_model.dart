@@ -15,6 +15,10 @@ class Expense {
   final String source; // manual | sms | ocr
   final String merchant;
   final String accountId;
+
+  /// For a transfer between your own accounts (e.g. paying a card bill from
+  /// savings): the account receiving the money. '' for ordinary transactions.
+  final String transferAccountId;
   final DateTime createdAt;
 
   /// Display name of the subcategory at write time ('' if none).
@@ -31,6 +35,19 @@ class Expense {
   /// Income (amount < 0) is always counted — this flag has no effect on credits.
   final bool isCountedAsSpend;
 
+  /// Auto-captured (SMS) and not yet confirmed by the user; shown in the
+  /// review inbox until approved, edited or deleted.
+  final bool needsReview;
+
+  /// 'personal' or 'business' (owners/freelancers using one account for both).
+  final String scope;
+
+  /// Category lines of a split transaction (amounts add up to |amount|).
+  final List<SplitLine> splits;
+
+  /// Budgets count this cost over this many months (1 = only the month paid).
+  final int spreadMonths;
+
   const Expense({
     required this.id,
     required this.amount,
@@ -44,8 +61,13 @@ class Expense {
     this.source = 'manual',
     this.merchant = '',
     this.accountId = 'default_bank',
+    this.transferAccountId = '',
     required this.createdAt,
     this.isCountedAsSpend = true,
+    this.needsReview = false,
+    this.scope = 'personal',
+    this.splits = const [],
+    this.spreadMonths = 1,
   });
 
   factory Expense.fromJson(
@@ -92,8 +114,13 @@ class Expense {
       accountId: json['accountId'] as String? ??
           json['account_id'] as String? ??
           'default_bank',
+      transferAccountId: json['transferAccountId'] as String? ?? '',
       createdAt: parseDate(json['createdAt']),
       isCountedAsSpend: parsedCountAsSpend ?? defaultIsCountedAsSpend ?? true,
+      needsReview: json['needsReview'] as bool? ?? false,
+      scope: json['scope'] as String? ?? 'personal',
+      splits: SplitLine.listFrom(json['splits']),
+      spreadMonths: (json['spreadMonths'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -109,8 +136,13 @@ class Expense {
         'source': source,
         'merchant': merchant,
         'accountId': accountId,
+        'transferAccountId': transferAccountId,
         'createdAt': Timestamp.fromDate(createdAt),
         'isCountedAsSpend': isCountedAsSpend,
+        'needsReview': needsReview,
+        'scope': scope,
+        'splits': splits.map((l) => l.toJson()).toList(),
+        'spreadMonths': spreadMonths,
       };
 
   Expense copyWith({
@@ -126,8 +158,13 @@ class Expense {
     String? source,
     String? merchant,
     String? accountId,
+    String? transferAccountId,
     DateTime? createdAt,
     bool? isCountedAsSpend,
+    bool? needsReview,
+    String? scope,
+    List<SplitLine>? splits,
+    int? spreadMonths,
   }) {
     return Expense(
       id: id ?? this.id,
@@ -142,8 +179,40 @@ class Expense {
       source: source ?? this.source,
       merchant: merchant ?? this.merchant,
       accountId: accountId ?? this.accountId,
+      transferAccountId: transferAccountId ?? this.transferAccountId,
       createdAt: createdAt ?? this.createdAt,
       isCountedAsSpend: isCountedAsSpend ?? this.isCountedAsSpend,
+      needsReview: needsReview ?? this.needsReview,
+      scope: scope ?? this.scope,
+      splits: splits ?? this.splits,
+      spreadMonths: spreadMonths ?? this.spreadMonths,
     );
+  }
+}
+
+/// One category line of a split transaction.
+class SplitLine {
+  final String categoryId;
+  final String subcategoryId;
+  final double amount;
+  const SplitLine({required this.categoryId, this.subcategoryId = '', required this.amount});
+
+  Map<String, dynamic> toJson() => {
+        'categoryId': categoryId,
+        if (subcategoryId.isNotEmpty) 'subcategoryId': subcategoryId,
+        'amount': amount,
+      };
+
+  static List<SplitLine> listFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final l in raw)
+        if (l is Map && l['categoryId'] is String)
+          SplitLine(
+            categoryId: l['categoryId'] as String,
+            subcategoryId: l['subcategoryId'] as String? ?? '',
+            amount: (l['amount'] as num? ?? 0).toDouble(),
+          ),
+    ];
   }
 }

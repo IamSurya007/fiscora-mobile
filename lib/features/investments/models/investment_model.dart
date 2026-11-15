@@ -7,6 +7,9 @@ class Investment {
   final double monthlyAmount;
   final double principal;
   final double maturityAmount;
+
+  /// Latest market/current value the user entered; null if not tracked.
+  final double? currentValue;
   final int durationMonths;
   final DateTime startDate;
   final DateTime maturityDate;
@@ -19,6 +22,7 @@ class Investment {
     required this.monthlyAmount,
     required this.principal,
     required this.maturityAmount,
+    this.currentValue,
     required this.durationMonths,
     required this.startDate,
     required this.maturityDate,
@@ -44,6 +48,7 @@ class Investment {
       maturityAmount: (json['maturityAmount'] as num?)?.toDouble() ??
           (json['maturity_amount'] as num?)?.toDouble() ??
           0.0,
+      currentValue: (json['currentValue'] as num?)?.toDouble(),
       durationMonths: (json['durationMonths'] as num?)?.toInt() ??
           (json['duration_months'] as num?)?.toInt() ??
           0,
@@ -59,6 +64,7 @@ class Investment {
         'monthlyAmount': monthlyAmount,
         'principal': principal,
         'maturityAmount': maturityAmount,
+        'currentValue': currentValue,
         'durationMonths': durationMonths,
         'startDate': Timestamp.fromDate(startDate),
         'maturityDate': Timestamp.fromDate(maturityDate),
@@ -72,6 +78,7 @@ class Investment {
     double? monthlyAmount,
     double? principal,
     double? maturityAmount,
+    double? currentValue,
     int? durationMonths,
     DateTime? startDate,
     DateTime? maturityDate,
@@ -84,6 +91,7 @@ class Investment {
       monthlyAmount: monthlyAmount ?? this.monthlyAmount,
       principal: principal ?? this.principal,
       maturityAmount: maturityAmount ?? this.maturityAmount,
+      currentValue: currentValue ?? this.currentValue,
       durationMonths: durationMonths ?? this.durationMonths,
       startDate: startDate ?? this.startDate,
       maturityDate: maturityDate ?? this.maturityDate,

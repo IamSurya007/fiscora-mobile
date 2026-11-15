@@ -7,6 +7,13 @@ import 'package:share_plus/share_plus.dart';
 import '../../features/expenses/models/expense_model.dart';
 import '../../features/investments/models/investment_model.dart';
 import '../../features/loans/models/loan_model.dart';
+import '../../features/expenses/models/ledger_rules.dart';
+import '../sync/collections/account_collection.dart';
+import '../sync/collections/investment_collection.dart';
+import '../sync/collections/loan_collection.dart';
+import '../sync/collections/expense_collection.dart';
+import '../sync/isar_database.dart';
+import 'package:isar_plus/isar_plus.dart';
 
 class ExcelExportService {
   /// Generates a styled Excel sheet with sheets for Expenses, Loans, and Investments,
@@ -16,6 +23,28 @@ class ExcelExportService {
     required List<Loan> loans,
     required List<Investment> investments,
   }) async {
+    // Callers read stream providers that may still be loading (loans and
+    // investments came out empty when those tabs hadn't been opened yet), so
+    // read straight from the local database as the source of truth.
+    final isar = IsarDatabase.instance.isar;
+    if (expenses.isEmpty) {
+      expenses = isar.expenseCollections.where().isDeletedEqualTo(false).findAll().map((e) => e.toDomain()).toList();
+    }
+    if (loans.isEmpty) {
+      loans = isar.loanCollections.where().isDeletedEqualTo(false).findAll().map((e) => e.toDomain()).toList();
+    }
+    if (investments.isEmpty) {
+      investments = isar.investmentCollections.where().isDeletedEqualTo(false).findAll().map((e) => e.toDomain()).toList();
+    }
+    final accountNames = <String, String>{
+      for (final a in isar.accountCollections.where().findAll()) ...{
+        a.clientId: a.name,
+        if (a.serverId != null) a.serverId!: a.name,
+      },
+    };
+    String accountName(String id) => accountNames[id] ?? id;
+    expenses = [...expenses]..sort((a, b) => a.date.compareTo(b.date));
+
     final excel = Excel.createExcel();
 
     // The excel library creates "Sheet1" by default. We will rename it to "Expenses".
@@ -49,14 +78,22 @@ class ExcelExportService {
     // ────────────────────────────────────────────────────────
     // 1. EXPENSES SHEET
     // ────────────────────────────────────────────────────────
+    // Every field needed to rebuild the ledger in a spreadsheet: amounts are
+    // positive with an explicit Type, so SUMIF by Type matches the app.
     final expenseHeaders = [
       'Date',
+      'Type',
+      'Amount',
       'Category',
+      'Subcategory',
+      'Account',
+      'To account',
       'Merchant',
       'Payment Method',
       'Source',
-      'Amount',
-      'Note'
+      'Counts as spend',
+      'Note',
+      'ID',
     ];
 
     // Write Expenses Headers
@@ -72,14 +109,25 @@ class ExcelExportService {
     // Write Expenses Data
     for (var row = 0; row < expenses.length; row++) {
       final expense = expenses[row];
+      final type = expense.transferAccountId.isNotEmpty || expense.isTransfer
+          ? 'Transfer'
+          : expense.amount < 0
+              ? 'Income'
+              : 'Expense';
       final values = [
         TextCellValue(dateTimeFormatter.format(expense.date)),
+        TextCellValue(type),
+        DoubleCellValue(expense.amount.abs()),
         TextCellValue(expense.category),
+        TextCellValue(expense.subcategory),
+        TextCellValue(accountName(expense.accountId)),
+        TextCellValue(expense.transferAccountId.isEmpty ? '' : accountName(expense.transferAccountId)),
         TextCellValue(expense.merchant),
         TextCellValue(expense.method.toUpperCase()),
         TextCellValue(expense.source.toUpperCase()),
-        DoubleCellValue(expense.amount),
+        TextCellValue(expense.countsAsSpend ? 'Yes' : 'No'),
         TextCellValue(expense.note),
+        TextCellValue(expense.id),
       ];
 
       for (var col = 0; col < values.length; col++) {
@@ -88,7 +136,7 @@ class ExcelExportService {
           rowIndex: row + 1,
         ));
         cell.value = values[col];
-        cell.cellStyle = (col == 5) ? currencyStyle : defaultStyle;
+        cell.cellStyle = (col == 2) ? currencyStyle : defaultStyle;
       }
     }
 
@@ -208,10 +256,15 @@ class ExcelExportService {
     await file.writeAsBytes(fileBytes, flush: true);
 
     // Share the file
-    await Share.shareXFiles(
-      [XFile(filePath, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
-      subject: 'Fiscora Financial Export',
-      text: 'Here is your Fiscora Financial Export covering expenses, loans, and investments.',
-    );
+    try {
+      await Share.shareXFiles(
+        [XFile(filePath, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
+        subject: 'Fiscora Financial Export',
+        text: 'Here is your Fiscora Financial Export covering expenses, loans, and investments.',
+      );
+    } finally {
+      // The file holds all of the user's finances; don't leave it in temp storage.
+      if (await file.exists()) await file.delete();
+    }
   }
 }

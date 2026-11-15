@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:isar_plus/isar_plus.dart';
 import '../../../../features/categories/services/category_resolver.dart';
 import '../../../../features/expenses/models/expense_model.dart';
@@ -20,8 +21,14 @@ class ExpenseCollection with SyncMetadataMixin {
   late String source;
   late String merchant;
   late String accountId;
+  String transferAccountId = '';
   late DateTime createdAt;
   bool isCountedAsSpend = true;
+  bool needsReview = false;
+  String scope = 'personal';
+  /// SplitLine list as JSON ('' = not split).
+  String splitsJson = '';
+  int spreadMonths = 1;
 
   ExpenseCollection();
 
@@ -46,8 +53,13 @@ class ExpenseCollection with SyncMetadataMixin {
       ..source = expense.source
       ..merchant = expense.merchant
       ..accountId = expense.accountId
+      ..transferAccountId = expense.transferAccountId
       ..createdAt = expense.createdAt
-      ..isCountedAsSpend = expense.isCountedAsSpend;
+      ..isCountedAsSpend = expense.isCountedAsSpend
+      ..needsReview = expense.needsReview
+      ..scope = expense.scope
+      ..splitsJson = expense.splits.isEmpty ? '' : jsonEncode(expense.splits.map((l) => l.toJson()).toList())
+      ..spreadMonths = expense.spreadMonths;
 
     col.clientId = expense.id;
     col.serverId = serverId;
@@ -78,8 +90,13 @@ class ExpenseCollection with SyncMetadataMixin {
       source: source,
       merchant: merchant,
       accountId: accountId.isEmpty ? 'default_bank' : accountId,
+      transferAccountId: transferAccountId,
       createdAt: createdAt,
       isCountedAsSpend: isCountedAsSpend,
+      needsReview: needsReview,
+      scope: scope,
+      splits: splitsJson.isEmpty ? const [] : SplitLine.listFrom(jsonDecode(splitsJson)),
+      spreadMonths: spreadMonths,
     );
   }
 
@@ -96,9 +113,14 @@ class ExpenseCollection with SyncMetadataMixin {
       'source': source.toUpperCase(), // backend enums: MANUAL, SMS, OCR
       'merchant': merchant,
       'accountId': accountId,
+      'transferAccountId': transferAccountId,
       'createdAt': createdAt.toUtc().toIso8601String(),
       'isCountedAsSpend': isCountedAsSpend,
       'is_counted_as_spend': isCountedAsSpend,
+      'needsReview': needsReview,
+      'scope': scope,
+      'splits': splitsJson.isEmpty ? <dynamic>[] : jsonDecode(splitsJson),
+      'spreadMonths': spreadMonths,
     };
   }
 }

@@ -17,4 +17,8 @@ abstract interface class IUserRepository {
 
   /// Marks seeding as complete — called once after [SeedService] finishes.
   Future<void> markSeeded();
+
+  /// Whether [uid] has finished first-run onboarding on this device.
+  Future<bool> isOnboarded(String uid);
+  Future<void> markOnboarded(String uid);
 }

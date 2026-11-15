@@ -47,6 +47,8 @@ android {
 
     buildTypes {
         release {
+            // Debug signing is only a fallback; the task-graph check below refuses to
+            // actually build a release with it unless explicitly allowed.
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
@@ -72,4 +74,17 @@ dependencies {
 
 flutter {
     source = "../.."
+}
+
+// A debug-signed release APK can't upgrade a properly signed install, so never
+// produce one silently. Local/PR builds opt in with ALLOW_DEBUG_SIGNING=true.
+gradle.taskGraph.whenReady {
+    val buildsRelease = allTasks.any {
+        (it.name.startsWith("assemble") || it.name.startsWith("bundle")) && it.name.endsWith("Release")
+    }
+    if (buildsRelease && !keystorePropertiesFile.exists() && System.getenv("ALLOW_DEBUG_SIGNING") != "true") {
+        throw GradleException(
+            "android/key.properties is missing. Set ALLOW_DEBUG_SIGNING=true for a debug-signed local release build."
+        )
+    }
 }

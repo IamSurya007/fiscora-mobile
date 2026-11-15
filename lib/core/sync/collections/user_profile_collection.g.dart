@@ -26,6 +26,7 @@ final UserProfileCollectionSchema = IsarGeneratedSchema(
       IsarPropertySchema(name: 'email', type: IsarType.string),
       IsarPropertySchema(name: 'photoUrl', type: IsarType.string),
       IsarPropertySchema(name: 'seeded', type: IsarType.bool),
+      IsarPropertySchema(name: 'onboardedAt', type: IsarType.dateTime),
     ],
     indexes: [
       IsarIndexSchema(
@@ -54,6 +55,11 @@ int serializeUserProfileCollection(
   IsarCore.writeString(writer, 3, object.email);
   IsarCore.writeString(writer, 4, object.photoUrl);
   IsarCore.writeBool(writer, 5, value: object.seeded);
+  IsarCore.writeLong(
+    writer,
+    6,
+    object.onboardedAt?.toUtc().microsecondsSinceEpoch ?? -9223372036854775808,
+  );
   return object.id;
 }
 
@@ -66,6 +72,17 @@ UserProfileCollection deserializeUserProfileCollection(IsarReader reader) {
   object.email = IsarCore.readString(reader, 3) ?? '';
   object.photoUrl = IsarCore.readString(reader, 4) ?? '';
   object.seeded = IsarCore.readBool(reader, 5);
+  {
+    final value = IsarCore.readLong(reader, 6);
+    if (value == -9223372036854775808) {
+      object.onboardedAt = null;
+    } else {
+      object.onboardedAt = DateTime.fromMicrosecondsSinceEpoch(
+        value,
+        isUtc: true,
+      ).toLocal();
+    }
+  }
   return object;
 }
 
@@ -84,6 +101,18 @@ dynamic deserializeUserProfileCollectionProp(IsarReader reader, int property) {
       return IsarCore.readString(reader, 4) ?? '';
     case 5:
       return IsarCore.readBool(reader, 5);
+    case 6:
+      {
+        final value = IsarCore.readLong(reader, 6);
+        if (value == -9223372036854775808) {
+          return null;
+        } else {
+          return DateTime.fromMicrosecondsSinceEpoch(
+            value,
+            isUtc: true,
+          ).toLocal();
+        }
+      }
     default:
       throw ArgumentError('Unknown property: $property');
   }
@@ -97,6 +126,7 @@ sealed class _UserProfileCollectionUpdate {
     String? email,
     String? photoUrl,
     bool? seeded,
+    DateTime? onboardedAt,
   });
 }
 
@@ -113,6 +143,7 @@ class _UserProfileCollectionUpdateImpl implements _UserProfileCollectionUpdate {
     Object? email = ignore,
     Object? photoUrl = ignore,
     Object? seeded = ignore,
+    Object? onboardedAt = ignore,
   }) {
     return collection.updateProperties(
           [id],
@@ -122,6 +153,7 @@ class _UserProfileCollectionUpdateImpl implements _UserProfileCollectionUpdate {
             if (email != ignore) 3: email as String?,
             if (photoUrl != ignore) 4: photoUrl as String?,
             if (seeded != ignore) 5: seeded as bool?,
+            if (onboardedAt != ignore) 6: onboardedAt as DateTime?,
           },
         ) >
         0;
@@ -136,6 +168,7 @@ sealed class _UserProfileCollectionUpdateAll {
     String? email,
     String? photoUrl,
     bool? seeded,
+    DateTime? onboardedAt,
   });
 }
 
@@ -153,6 +186,7 @@ class _UserProfileCollectionUpdateAllImpl
     Object? email = ignore,
     Object? photoUrl = ignore,
     Object? seeded = ignore,
+    Object? onboardedAt = ignore,
   }) {
     return collection.updateProperties(id, {
       if (uid != ignore) 1: uid as String?,
@@ -160,6 +194,7 @@ class _UserProfileCollectionUpdateAllImpl
       if (email != ignore) 3: email as String?,
       if (photoUrl != ignore) 4: photoUrl as String?,
       if (seeded != ignore) 5: seeded as bool?,
+      if (onboardedAt != ignore) 6: onboardedAt as DateTime?,
     });
   }
 }
@@ -180,6 +215,7 @@ sealed class _UserProfileCollectionQueryUpdate {
     String? email,
     String? photoUrl,
     bool? seeded,
+    DateTime? onboardedAt,
   });
 }
 
@@ -197,6 +233,7 @@ class _UserProfileCollectionQueryUpdateImpl
     Object? email = ignore,
     Object? photoUrl = ignore,
     Object? seeded = ignore,
+    Object? onboardedAt = ignore,
   }) {
     return query.updateProperties(limit: limit, {
       if (uid != ignore) 1: uid as String?,
@@ -204,6 +241,7 @@ class _UserProfileCollectionQueryUpdateImpl
       if (email != ignore) 3: email as String?,
       if (photoUrl != ignore) 4: photoUrl as String?,
       if (seeded != ignore) 5: seeded as bool?,
+      if (onboardedAt != ignore) 6: onboardedAt as DateTime?,
     });
   }
 }
@@ -231,6 +269,7 @@ class _UserProfileCollectionQueryBuilderUpdateImpl
     Object? email = ignore,
     Object? photoUrl = ignore,
     Object? seeded = ignore,
+    Object? onboardedAt = ignore,
   }) {
     final q = query.build();
     try {
@@ -240,6 +279,7 @@ class _UserProfileCollectionQueryBuilderUpdateImpl
         if (email != ignore) 3: email as String?,
         if (photoUrl != ignore) 4: photoUrl as String?,
         if (seeded != ignore) 5: seeded as bool?,
+        if (onboardedAt != ignore) 6: onboardedAt as DateTime?,
       });
     } finally {
       q.close();
@@ -1107,6 +1147,104 @@ extension UserProfileCollectionQueryFilter
       );
     });
   }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const IsNullCondition(property: 6));
+    });
+  }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtIsNotNull() {
+    return QueryBuilder.apply(not(), (query) {
+      return query.addFilterCondition(const IsNullCondition(property: 6));
+    });
+  }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        EqualCondition(property: 6, value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtGreaterThan(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        GreaterCondition(property: 6, value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtGreaterThanOrEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        GreaterOrEqualCondition(property: 6, value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtLessThan(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(LessCondition(property: 6, value: value));
+    });
+  }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtLessThanOrEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        LessOrEqualCondition(property: 6, value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    UserProfileCollection,
+    UserProfileCollection,
+    QAfterFilterCondition
+  >
+  onboardedAtBetween(DateTime? lower, DateTime? upper) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        BetweenCondition(property: 6, lower: lower, upper: upper),
+      );
+    });
+  }
 }
 
 extension UserProfileCollectionQueryObject
@@ -1202,6 +1340,20 @@ extension UserProfileCollectionQuerySortBy
       return query.addSortBy(5, sort: Sort.desc);
     });
   }
+
+  QueryBuilder<UserProfileCollection, UserProfileCollection, QAfterSortBy>
+  sortByOnboardedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(6);
+    });
+  }
+
+  QueryBuilder<UserProfileCollection, UserProfileCollection, QAfterSortBy>
+  sortByOnboardedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(6, sort: Sort.desc);
+    });
+  }
 }
 
 extension UserProfileCollectionQuerySortThenBy
@@ -1289,6 +1441,20 @@ extension UserProfileCollectionQuerySortThenBy
       return query.addSortBy(5, sort: Sort.desc);
     });
   }
+
+  QueryBuilder<UserProfileCollection, UserProfileCollection, QAfterSortBy>
+  thenByOnboardedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(6);
+    });
+  }
+
+  QueryBuilder<UserProfileCollection, UserProfileCollection, QAfterSortBy>
+  thenByOnboardedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(6, sort: Sort.desc);
+    });
+  }
 }
 
 extension UserProfileCollectionQueryWhereDistinct
@@ -1325,6 +1491,13 @@ extension UserProfileCollectionQueryWhereDistinct
   distinctBySeeded() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(5);
+    });
+  }
+
+  QueryBuilder<UserProfileCollection, UserProfileCollection, QAfterDistinct>
+  distinctByOnboardedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(6);
     });
   }
 }
@@ -1365,6 +1538,13 @@ extension UserProfileCollectionQueryProperty1
   QueryBuilder<UserProfileCollection, bool, QAfterProperty> seededProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addProperty(5);
+    });
+  }
+
+  QueryBuilder<UserProfileCollection, DateTime?, QAfterProperty>
+  onboardedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addProperty(6);
     });
   }
 }
@@ -1411,6 +1591,13 @@ extension UserProfileCollectionQueryProperty2<R>
       return query.addProperty(5);
     });
   }
+
+  QueryBuilder<UserProfileCollection, (R, DateTime?), QAfterProperty>
+  onboardedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addProperty(6);
+    });
+  }
 }
 
 extension UserProfileCollectionQueryProperty3<R1, R2>
@@ -1453,6 +1640,13 @@ extension UserProfileCollectionQueryProperty3<R1, R2>
   seededProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addProperty(5);
+    });
+  }
+
+  QueryBuilder<UserProfileCollection, (R1, R2, DateTime?), QOperations>
+  onboardedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addProperty(6);
     });
   }
 }

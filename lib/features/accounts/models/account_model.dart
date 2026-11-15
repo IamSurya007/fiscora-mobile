@@ -59,7 +59,16 @@ class Account {
   final AccountType type;
   final String institution;
   final double currentBalance; // For bank/cash/wallet: available money. For CC: outstanding balance owed.
+  /// Balance before any recorded transaction; the current balance is derived
+  /// from it. Null for accounts that predate derived balances.
+  final double? openingBalance;
   final double creditLimit;    // For credit cards only
+  /// Credit cards: statement and payment-due day of month (1-31), if known.
+  final int? statementDay;
+  final int? dueDay;
+
+  /// 'personal', 'business' or 'mixed' (used for both).
+  final String ownership;
   final int colorValue;
   final String iconName;
   final bool isArchived;
@@ -71,7 +80,11 @@ class Account {
     required this.type,
     this.institution = '',
     required this.currentBalance,
+    this.openingBalance,
     this.creditLimit = 0.0,
+    this.statementDay,
+    this.dueDay,
+    this.ownership = 'personal',
     required this.colorValue,
     this.iconName = '',
     this.isArchived = false,
@@ -104,9 +117,13 @@ class Account {
       currentBalance: (json['currentBalance'] as num?)?.toDouble() ??
           (json['current_balance'] as num?)?.toDouble() ??
           0.0,
+      openingBalance: (json['openingBalance'] as num?)?.toDouble(),
       creditLimit: (json['creditLimit'] as num?)?.toDouble() ??
           (json['credit_limit'] as num?)?.toDouble() ??
           0.0,
+      statementDay: (json['statementDay'] as num?)?.toInt(),
+      dueDay: (json['dueDay'] as num?)?.toInt(),
+      ownership: json['ownership'] as String? ?? 'personal',
       colorValue: (json['colorValue'] as num?)?.toInt() ??
           (json['color_value'] as num?)?.toInt() ??
           parsedType.defaultColor.value,
@@ -134,7 +151,11 @@ class Account {
     AccountType? type,
     String? institution,
     double? currentBalance,
+    double? openingBalance,
     double? creditLimit,
+    int? statementDay,
+    int? dueDay,
+    String? ownership,
     int? colorValue,
     String? iconName,
     bool? isArchived,
@@ -146,7 +167,11 @@ class Account {
       type: type ?? this.type,
       institution: institution ?? this.institution,
       currentBalance: currentBalance ?? this.currentBalance,
+      openingBalance: openingBalance ?? this.openingBalance,
       creditLimit: creditLimit ?? this.creditLimit,
+      statementDay: statementDay ?? this.statementDay,
+      dueDay: dueDay ?? this.dueDay,
+      ownership: ownership ?? this.ownership,
       colorValue: colorValue ?? this.colorValue,
       iconName: iconName ?? this.iconName,
       isArchived: isArchived ?? this.isArchived,

@@ -4,10 +4,23 @@ import '../../../core/providers/repository_providers.dart';
 import '../../../core/repositories/i_expense_repository.dart';
 import '../../categories/models/category.dart';
 import '../models/expense_model.dart';
+import '../models/ledger_rules.dart';
 
 /// Real-time stream of all expenses, newest first.
 final expensesStreamProvider = StreamProvider<List<Expense>>((ref) {
   return ref.watch(expenseRepositoryProvider).watchExpenses();
+});
+
+/// Merchant rules learned from "Update All" and explicit category choices.
+final merchantRulesProvider =
+    StreamProvider<List<({String merchant, CategorySelection selection})>>((ref) {
+  return ref.watch(expenseRepositoryProvider).watchMerchantRules();
+});
+
+/// Auto-captured transactions waiting for the user to confirm them, newest first.
+final reviewQueueProvider = Provider<List<Expense>>((ref) {
+  final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? const [];
+  return expenses.where((e) => e.needsReview).toList();
 });
 
 /// Budget category limits — loaded from persistent key so limits carry over every month.
@@ -36,6 +49,14 @@ class ExpenseNotifier extends StateNotifier<AsyncValue<void>> {
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
+  }
+
+  Future<void> deleteMerchantRule(String merchant) async {
+    await _repo.deleteMerchantRule(merchant);
+  }
+
+  Future<void> approveExpenses(List<String> ids) async {
+    await _repo.approveExpenses(ids);
   }
 
   Future<void> deleteExpense(String id) async {
@@ -95,23 +116,23 @@ final expenseNotifierProvider =
   return ExpenseNotifier(ref.watch(expenseRepositoryProvider));
 });
 
-/// Computed: total income (credit) for the current month (excludes isCountedAsSpend=false).
+/// Computed: personal income (credits, excluding transfers and business) for the current month.
 final monthlyIncomeProvider = Provider<double>((ref) {
   final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? [];
   final now = DateTime.now();
   return expenses
       .where((e) => e.date.year == now.year && e.date.month == now.month)
-      .where((e) => e.amount < 0 && e.isCountedAsSpend) // negative = credit/income
+      .where((e) => e.countsAsPersonalIncome) // business revenue excluded
       .fold(0.0, (sum, e) => sum + e.amount.abs());
 });
 
-/// Computed: total counted spends for the current month (excludes isCountedAsSpend=false).
+/// Computed: personal counted spends for the current month (excludes transfers, business and isCountedAsSpend=false).
 final monthlyExpensesProvider = Provider<double>((ref) {
   final expenses = ref.watch(expensesStreamProvider).valueOrNull ?? [];
   final now = DateTime.now();
   return expenses
       .where((e) => e.date.year == now.year && e.date.month == now.month)
-      .where((e) => e.amount > 0 && e.isCountedAsSpend)
+      .where((e) => e.countsAsPersonalSpend)
       .fold(0.0, (sum, e) => sum + e.amount);
 });
 

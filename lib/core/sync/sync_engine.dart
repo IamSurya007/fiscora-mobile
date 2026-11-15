@@ -22,6 +22,7 @@ import 'package:fiscora/core/sync/outbox_operation.dart';
 import 'package:fiscora/core/sync/sync_api_client.dart';
 import 'package:fiscora/core/sync/sync_metadata.dart';
 import 'package:fiscora/core/sync/sync_state.dart';
+import '../services/account_balances.dart';
 
 class SyncEngine {
   static SyncEngine? _instance;
@@ -100,7 +101,21 @@ class SyncEngine {
     return IsarDatabase.instance.isar.outboxOperations.where().count();
   }
 
+  bool _suspended = false;
+
+  /// Stops new sync cycles and waits for a running one to finish. Used on
+  /// sign-out so a debounced sync can't refill the wiped database with the
+  /// previous user's data.
+  Future<void> suspend() async {
+    _suspended = true;
+    _debounceTimer?.cancel();
+    if (_currentSync != null) await _currentSync!.future;
+  }
+
+  void resume() => _suspended = false;
+
   Future<bool> _runExclusive({required bool forcePull}) async {
+    if (_suspended) return false;
     if (_currentSync != null) return _currentSync!.future;
     final completer = Completer<bool>();
     _currentSync = completer;
@@ -121,6 +136,7 @@ class SyncEngine {
 
   /// Returns false if any pull failed (e.g. offline).
   Future<bool> runSyncCycle({bool forcePull = false}) async {
+    await _requeueOrphanedInFlight();
     bool hasPendingWork = true;
     int maxCycles = 5;
     int cycles = 0;
@@ -133,6 +149,9 @@ class SyncEngine {
       allPullsOk = allPullsOk && pull.ok;
       hasPendingWork = pushedCount > 0 || pull.count > 0;
     }
+    // Pulled transactions and opening balances change derived balances.
+    final isar = IsarDatabase.instance.isar;
+    await isar.writeAsync((isar) => AccountBalances.recomputeAll(isar));
     return allPullsOk;
   }
 
@@ -167,6 +186,24 @@ class SyncEngine {
     final delaySecs = (base * (1 << attemptCount)).clamp(base, maxDelay);
     final jitter = DateTime.now().millisecond % 5;
     return DateTime.now().toUtc().add(Duration(seconds: delaySecs + jitter));
+  }
+
+  /// Cycles never overlap, so an op still marked inFlight when a cycle starts
+  /// was abandoned (app killed mid-push). Re-queue it; the server dedupes
+  /// replayed creates by clientId.
+  Future<void> _requeueOrphanedInFlight() async {
+    final isar = IsarDatabase.instance.isar;
+    final orphaned = await isar.outboxOperations
+        .where()
+        .outboxStatusEqualTo(OutboxStatus.inFlight.name)
+        .findAll();
+    if (orphaned.isEmpty) return;
+    isar.write((isar) {
+      for (final op in orphaned) {
+        op.outboxStatus = OutboxStatus.queued.name;
+        isar.outboxOperations.put(op);
+      }
+    });
   }
 
   // Push pending outbox mutations in FIFO order per entity type
@@ -223,12 +260,17 @@ class SyncEngine {
         final results = await _apiClient.pushBatch(entityType, pushPayloads);
         
         isar.write((isar) {
+          // The server answers in request order. Matching by clientId gave every
+          // op for the same record (create then update) the first op's result.
+          final byPosition = results.length == batch.length;
           for (int i = 0; i < batch.length; i++) {
             final op = batch[i];
-            final result = results.firstWhere(
-              (r) => r['clientId'] == op.clientId,
-              orElse: () => <String, dynamic>{},
-            );
+            final result = byPosition && results[i]['clientId'] == op.clientId
+                ? results[i]
+                : results.firstWhere(
+                    (r) => r['clientId'] == op.clientId,
+                    orElse: () => <String, dynamic>{},
+                  );
 
             if (result.isEmpty) {
               // Operation missing from result, retry later
@@ -257,6 +299,15 @@ class SyncEngine {
                 continue;
               }
 
+              // An edit made while this op was in flight is still queued: adopt
+              // the new base version, but keep the record dirty and don't let
+              // the server copy overwrite that newer local edit.
+              final laterOpQueued = isar.outboxOperations
+                  .where()
+                  .clientIdEqualTo(op.clientId)
+                  .findAll()
+                  .any((o) => o.id != op.id && o.entityType == entityType);
+
               // Apply server versioning to local record
               _updateLocalMetadata(
                 entityType,
@@ -264,13 +315,14 @@ class SyncEngine {
                 serverId: serverId,
                 serverVersion: serverVersion,
                 serverUpdatedAt: DateTime.parse(serverUpdatedAtStr),
+                keepDirty: laterOpQueued,
               );
 
               // The server already had this record (e.g. re-import after a
               // reinstall). Its copy wins; a deleted one stays deleted.
               if (result['isDeleted'] == true) {
                 _applyTombstone(entityType, op.clientId);
-              } else if (result['serverPayload'] is Map) {
+              } else if (!laterOpQueued && result['serverPayload'] is Map) {
                 _applyServerRecord(entityType, {
                   'id': serverId,
                   'clientId': op.clientId,
@@ -285,7 +337,15 @@ class SyncEngine {
               processedCount++;
             } else if (status == 'conflict') {
               // Flag conflict state locally
-              _flagLocalConflict(entityType, op.clientId, result['remotePayload'] as Map<String, dynamic>? ?? {});
+              // Keep the server's identity with the conflict so "Keep mine" can
+              // push on top of the current server version, and "Keep server"
+              // can apply the full server record.
+              _flagLocalConflict(entityType, op.clientId, {
+                ...Map<String, dynamic>.from(result['remotePayload'] as Map? ?? {}),
+                if (result['serverVersion'] != null) '__serverVersion': result['serverVersion'],
+                if (result['serverId'] != null) '__serverId': result['serverId'],
+                if (result['serverUpdatedAt'] != null) '__serverUpdatedAt': result['serverUpdatedAt'],
+              });
               isar.outboxOperations.delete(op.id); // Conflict stops outbox retries (resolved manually)
               processedCount++;
             } else {
@@ -490,6 +550,39 @@ class SyncEngine {
       }
     }
     return newMap;
+  }
+
+  /// "Keep server" on the conflict screen: applies the server's full record
+  /// (every field, every entity type). Call inside an Isar write.
+  void applyConflictServerCopy(String entityType, String clientId, Map<String, dynamic> stored) {
+    final payload = Map<String, dynamic>.from(stored)
+      ..remove('__serverVersion')
+      ..remove('__serverId')
+      ..remove('__serverUpdatedAt');
+    final serverId = stored['__serverId'] as String? ?? _localServerId(entityType, clientId);
+    if (serverId == null) return;
+    _applyServerRecord(entityType, {
+      'id': serverId,
+      'clientId': clientId,
+      'version': stored['__serverVersion'] as int? ?? 1,
+      'updatedAt': stored['__serverUpdatedAt'] as String? ?? DateTime.now().toUtc().toIso8601String(),
+      'payload': payload,
+    }, forceRemote: true);
+    AccountBalances.recomputeAll(IsarDatabase.instance.isar);
+  }
+
+  String? _localServerId(String entityType, String clientId) {
+    final isar = IsarDatabase.instance.isar;
+    return switch (entityType) {
+      'expense' => isar.expenseCollections.where().clientIdEqualTo(clientId).findFirst()?.serverId,
+      'loan' => isar.loanCollections.where().clientIdEqualTo(clientId).findFirst()?.serverId,
+      'investment' => isar.investmentCollections.where().clientIdEqualTo(clientId).findFirst()?.serverId,
+      'budget' => isar.budgetCollections.where().clientIdEqualTo(clientId).findFirst()?.serverId,
+      'category_rule' => isar.categoryRuleCollections.where().clientIdEqualTo(clientId).findFirst()?.serverId,
+      'category' => isar.categoryCollections.where().clientIdEqualTo(clientId).findFirst()?.serverId,
+      'account' => isar.accountCollections.where().clientIdEqualTo(clientId).findFirst()?.serverId,
+      _ => null,
+    };
   }
 
   void _applyServerRecord(String entityType, Map<String, dynamic> remote, {bool forceRemote = false}) {
@@ -961,14 +1054,68 @@ class SyncEngine {
     return 1;
   }
 
+  /// Records the server id/version without marking the record synced.
+  void _adoptServerIdentity(
+    Isar isar,
+    String entityType,
+    String clientId,
+    String serverId,
+    int serverVersion,
+    DateTime serverUpdatedAt,
+  ) {
+    SyncMetadataMixin? row;
+    switch (entityType) {
+      case 'expense':
+        row = isar.expenseCollections.where().clientIdEqualTo(clientId).findFirst();
+      case 'loan':
+        row = isar.loanCollections.where().clientIdEqualTo(clientId).findFirst();
+      case 'investment':
+        row = isar.investmentCollections.where().clientIdEqualTo(clientId).findFirst();
+      case 'budget':
+        row = isar.budgetCollections.where().clientIdEqualTo(clientId).findFirst();
+      case 'category_rule':
+        row = isar.categoryRuleCollections.where().clientIdEqualTo(clientId).findFirst();
+      case 'category':
+        row = isar.categoryCollections.where().clientIdEqualTo(clientId).findFirst();
+      case 'account':
+        row = isar.accountCollections.where().clientIdEqualTo(clientId).findFirst();
+    }
+    if (row == null) return;
+    row
+      ..serverId = serverId
+      ..version = serverVersion
+      ..serverUpdatedAt = serverUpdatedAt;
+    switch (row) {
+      case ExpenseCollection r:
+        isar.expenseCollections.put(r);
+      case LoanCollection r:
+        isar.loanCollections.put(r);
+      case InvestmentCollection r:
+        isar.investmentCollections.put(r);
+      case BudgetCollection r:
+        isar.budgetCollections.put(r);
+      case CategoryRuleCollection r:
+        isar.categoryRuleCollections.put(r);
+      case CategoryCollection r:
+        isar.categoryCollections.put(r);
+      case AccountCollection r:
+        isar.accountCollections.put(r);
+    }
+  }
+
   void _updateLocalMetadata(
     String entityType,
     String clientId, {
     required String serverId,
     required int serverVersion,
     required DateTime serverUpdatedAt,
+    bool keepDirty = false,
   }) {
     final isar = IsarDatabase.instance.isar;
+    if (keepDirty) {
+      _adoptServerIdentity(isar, entityType, clientId, serverId, serverVersion, serverUpdatedAt);
+      return;
+    }
     if (entityType == 'expense') {
       final res = isar.expenseCollections.where().clientIdEqualTo(clientId).findFirst();
       if (res != null) {

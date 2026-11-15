@@ -13,4 +13,7 @@ class UserProfileCollection {
   late String email;
   late String photoUrl;
   late bool seeded;
+
+  /// When the user finished (or skipped) first-run onboarding on this device.
+  DateTime? onboardedAt;
 }

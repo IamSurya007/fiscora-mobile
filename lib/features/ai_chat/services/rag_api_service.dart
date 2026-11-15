@@ -168,7 +168,7 @@ class RagApiService {
         print('RagApiService DioError: ${e.message} | Response: ${e.response?.data}');
       }
       final statusCode = e.response?.statusCode;
-      String userFriendlyMessage = 'Unable to connect to Spendly AI service.';
+      String userFriendlyMessage = 'Unable to connect to Fiscora AI service.';
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout) {
         userFriendlyMessage = 'Request timed out. Please check your internet connection.';
@@ -177,7 +177,7 @@ class RagApiService {
       } else if (statusCode == 404) {
         userFriendlyMessage = 'This conversation no longer exists.';
       } else if (statusCode != null && statusCode >= 500) {
-        userFriendlyMessage = 'Spendly AI server is currently undergoing maintenance.';
+        userFriendlyMessage = 'Fiscora AI server is currently undergoing maintenance.';
       } else if (e.response?.data is Map &&
           (e.response!.data as Map).containsKey('message')) {
         userFriendlyMessage = (e.response!.data as Map)['message'].toString();

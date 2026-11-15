@@ -7,15 +7,19 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/providers/repository_providers.dart';
 import '../../../core/services/excel_export_service.dart';
-import '../../../features/auth/data/repository/auth_repository_impl.dart';
+import '../../../core/services/privacy_service.dart';
 import '../../../features/expenses/services/expense_providers.dart';
 import '../../../features/loans/services/loan_providers.dart';
 import '../../../features/investments/services/investment_providers.dart';
 import '../../../splash_screen.dart';
 import '../../auth/presentation/screens/conflict_resolution_screen.dart';
 import '../../categories/screens/manage_categories_screen.dart';
-import '../../../core/sync/isar_database.dart';
+import '../../categories/screens/merchant_rules_screen.dart';
+import '../../business/business_pnl_screen.dart';
+import '../../tax/tax_screen.dart';
+import '../../customers/customers_screen.dart';
 import '../../../core/sync/sync_engine.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -86,6 +90,96 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         );
       }
     }
+  }
+
+  PrivacyService get _privacy => PrivacyService(ref.read(syncApiClientProvider));
+
+  void _snack(String message, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? AppColors.expenseRed : null,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _handleDownloadMyData() async {
+    _snack('Preparing your data…');
+    try {
+      await _privacy.exportMyData();
+    } catch (e) {
+      _snack('Could not download your data. Check your connection and try again.', error: true);
+    }
+  }
+
+  Future<void> _showGrievanceContact() async {
+    GrievanceContact? contact;
+    try {
+      contact = await _privacy.grievanceContact();
+    } catch (_) {
+      contact = null;
+    }
+    if (!mounted) return;
+    final email = contact?.email;
+    final name = contact?.name;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Privacy & grievances'),
+        content: Text(
+          email == null
+              ? 'Could not load the grievance contact. Check your connection and try again.'
+              : 'For questions or complaints about how Fiscora handles your personal data, '
+                  'contact our Grievance Officer${name != null ? ', $name' : ''}, at $email.\n\n'
+                  'You can also download or delete all your data from this screen.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleDeleteAccount() async {
+    final first = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete your account?'),
+        content: const Text(
+          'This permanently deletes your Fiscora account and all your accounts, transactions, '
+          'budgets, loans, investments, categories and chats. It cannot be undone.\n\n'
+          'Download your data first if you want a copy.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continue', style: TextStyle(color: AppColors.expenseRed)),
+          ),
+        ],
+      ),
+    );
+    if (first != true || !mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => const _TypeDeleteDialog(),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Stop sync so a pending upload can't recreate data after the delete.
+    await SyncEngine.instance.suspend();
+    _snack('Deleting your account…');
+    try {
+      await _privacy.deleteAccount();
+    } catch (e) {
+      SyncEngine.instance.resume();
+      _snack('Could not delete your account. Check your connection and try again.', error: true);
+      return;
+    }
+    await signOutAndClearLocalData(ref);
   }
 
   Future<void> _showSignOutDialog(BuildContext context) async {
@@ -165,9 +259,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (discard != true) return;
     }
 
-    resetAuthSetup();
-    await IsarDatabase.clearAll();
-    await AuthRepositoryImpl().signOut();
+    await signOutAndClearLocalData(ref);
   }
 
   @override
@@ -403,6 +495,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   const Divider(height: 1, color: AppColors.borderLight),
                   _MenuItem(
+                    icon: Icons.rule_rounded,
+                    label: 'Merchant rules',
+                    sublabel: 'See and change how merchants are categorised',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MerchantRulesScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.storefront_rounded,
+                    label: 'Business',
+                    sublabel: 'Profit & loss, owner draws and what the business owes you',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BusinessPnlScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.calculate_rounded,
+                    label: 'Tax',
+                    sublabel: 'Business receipts, limits and advance tax (estimates)',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TaxScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.people_alt_rounded,
+                    label: 'Customers',
+                    sublabel: 'Udhaar ledger and payment reminders',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CustomersScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
                     icon: Icons.table_chart_rounded,
                     label: 'Export to Excel',
                     sublabel: 'Download all expenses, loans & investments',
@@ -421,6 +561,59 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       );
                     },
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+
+          // ── Privacy ──────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
+              child: Text(
+                'Privacy',
+                style: AppTextStyles.label.copyWith(
+                  color: AppColors.mutedText,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
+
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
+              decoration: BoxDecoration(
+                color: AppColors.cardSurface,
+                borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                border: Border.all(color: AppColors.borderLight),
+              ),
+              child: Column(
+                children: [
+                  _MenuItem(
+                    icon: Icons.download_rounded,
+                    label: 'Download my data',
+                    sublabel: 'Everything Fiscora stores about you, as JSON',
+                    onTap: _handleDownloadMyData,
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.support_agent_rounded,
+                    label: 'Privacy & grievances',
+                    sublabel: 'Contact our Grievance Officer',
+                    onTap: _showGrievanceContact,
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.delete_forever_rounded,
+                    label: 'Delete my account',
+                    sublabel: 'Permanently delete your account and data',
+                    onTap: _handleDeleteAccount,
                   ),
                 ],
               ),
@@ -501,6 +694,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         color: AppColors.borderLight,
         margin: const EdgeInsets.symmetric(horizontal: 8),
       );
+}
+
+/// Second confirmation for account deletion: the user must type DELETE.
+class _TypeDeleteDialog extends StatefulWidget {
+  const _TypeDeleteDialog();
+
+  @override
+  State<_TypeDeleteDialog> createState() => _TypeDeleteDialogState();
+}
+
+class _TypeDeleteDialogState extends State<_TypeDeleteDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = _controller.text.trim() == 'DELETE';
+    return AlertDialog(
+      title: const Text('Type DELETE to confirm'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.characters,
+        decoration: const InputDecoration(hintText: 'DELETE'),
+        onChanged: (_) => setState(() {}),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: ok ? () => Navigator.pop(context, true) : null,
+          child: Text('Delete permanently', style: TextStyle(color: ok ? AppColors.expenseRed : null)),
+        ),
+      ],
+    );
+  }
 }
 
 class _SummaryStat extends StatelessWidget {

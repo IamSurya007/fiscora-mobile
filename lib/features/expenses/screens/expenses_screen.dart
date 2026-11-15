@@ -14,9 +14,15 @@ import '../../categories/widgets/category_icon.dart';
 import '../../expenses/models/expense_model.dart';
 import '../../expenses/services/expense_providers.dart';
 import 'add_expense_sheet.dart';
+import '../models/ledger_rules.dart';
+import '../widgets/delete_with_undo.dart';
+import '../../bills/upcoming_bills_screen.dart';
+import '../../insights/month_review_screen.dart';
 
 class ExpensesScreen extends ConsumerStatefulWidget {
-  const ExpensesScreen({super.key});
+  /// 0 = budget overview, 1 = transactions.
+  final int initialTab;
+  const ExpensesScreen({super.key, this.initialTab = 0});
 
   @override
   ConsumerState<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -29,6 +35,27 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
   String? _filterCategory;
   String? _filterAccountId;
 
+  /// Free-text search. When set it searches every month, not just the selected one.
+  String _query = '';
+  final _searchController = TextEditingController();
+
+  /// [_firstOfMonth, start of next month): a row at 23:59:59.5 on the 31st
+  /// used to show in both months.
+  bool _inSelectedMonth(Expense e) =>
+      !e.date.isBefore(_firstOfMonth) &&
+      e.date.isBefore(DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1));
+
+  bool _matchesQuery(Expense e, String q) {
+    final registry = ref.read(categoryRegistryProvider);
+    final hay = [
+      e.merchant,
+      e.note,
+      registry.label(e.categoryId, e.subcategoryId, isCredit: e.amount < 0),
+      e.amount.abs().toStringAsFixed(0),
+    ].join(' ').toLowerCase();
+    return q.toLowerCase().split(RegExp(r'\s+')).every(hay.contains);
+  }
+
   // Tracks which category card is expanded for inline budget editing
   String? _expandedCategory;
   final Map<String, TextEditingController> _limitControllers = {};
@@ -36,12 +63,13 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     for (final c in _limitControllers.values) {
       c.dispose();
     }
@@ -50,8 +78,11 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
 
   DateTime get _firstOfMonth =>
       DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-  DateTime get _lastOfMonth =>
-      DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
+
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _selectedMonth.year == now.year && _selectedMonth.month == now.month;
+  }
 
   void _prevMonth() => setState(() =>
       _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1));
@@ -99,8 +130,18 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     final registry = ref.watch(categoryRegistryProvider);
     final spent = <String, double>{};
     final spentBySub = <String, Map<String, double>>{};
+    // Split and spread transactions (possibly paid in earlier months) count
+    // their share towards this month's budgets.
+    final allForBudgets = ref.read(expensesStreamProvider).valueOrNull ?? monthExpenses;
+    for (final e in allForBudgets) {
+      if (e.splits.isEmpty && e.spreadMonths <= 1) continue;
+      for (final part in e.budgetPartsFor(_selectedMonth).entries) {
+        spent[part.key] = (spent[part.key] ?? 0) + part.value;
+      }
+    }
     for (final e in monthExpenses) {
-      if (e.amount > 0 && e.isCountedAsSpend) {
+      if (e.splits.isNotEmpty || e.spreadMonths > 1) continue; // counted above
+      if (e.countsAsPersonalSpend) {
         spent[e.categoryId] = (spent[e.categoryId] ?? 0) + e.amount;
         if (e.subcategoryId.isNotEmpty) {
           final subs = spentBySub.putIfAbsent(e.categoryId, () => {});
@@ -112,7 +153,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     final totalBudgeted = budget.values
         .fold(0.0, (s, v) => s + ((v['limit'] as num?)?.toDouble() ?? 0.0));
     final totalSpent =
-        monthExpenses.where((e) => e.amount > 0 && e.isCountedAsSpend).fold(
+        monthExpenses.where((e) => e.countsAsPersonalSpend).fold(
               0.0,
               (s, e) => s + e.amount,
             );
@@ -137,6 +178,25 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
             ),
           ),
         ),
+
+        // Safe to spend: what's left across budgets for the rest of this month.
+        if (_isCurrentMonth)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screenPadding, 0, AppSpacing.screenPadding, AppSpacing.lg),
+              child: _SafeToSpend(
+                left: (totalBudgeted - spent.entries
+                        .where((e) => budget.containsKey(e.key))
+                        .fold(0.0, (s, e) => s + e.value))
+                    .clamp(0.0, double.infinity),
+                daysLeft: DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1)
+                    .difference(DateTime.now())
+                    .inDays
+                    .clamp(1, 31),
+              ),
+            ),
+          ),
 
         SliverToBoxAdapter(
           child: Padding(
@@ -410,12 +470,12 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
 
   // ── Transactions Tab ──────────────────────────────────────────────────
   Widget _buildTransactionsTab(List<Expense> allExpenses) {
-    final monthExpenses = allExpenses
-        .where((e) =>
-            e.date.isAfter(
-                _firstOfMonth.subtract(const Duration(seconds: 1))) &&
-            e.date.isBefore(_lastOfMonth.add(const Duration(seconds: 1))))
-        .toList();
+    final hidden = ref.watch(pendingDeleteIdsProvider);
+    final visible = allExpenses.where((e) => !hidden.contains(e.id)).toList();
+    final searching = _query.trim().isNotEmpty;
+    final monthExpenses = searching
+        ? visible.where((e) => _matchesQuery(e, _query.trim())).toList()
+        : visible.where(_inSelectedMonth).toList();
 
     var filtered = monthExpenses;
     if (_filterAccountId != null) {
@@ -441,20 +501,59 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
     }
     final groupedKeys = grouped.keys.toList();
 
+    final totalOut = filtered.where((e) => e.countsAsSpend).fold(0.0, (s, e) => s + e.amount);
+    final totalIn = filtered.where((e) => e.countsAsIncome).fold(0.0, (s, e) => s - e.amount);
+
     return CustomScrollView(
       slivers: [
-        // Month selector
+        // Search (all months)
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.only(
-                top: AppSpacing.md, bottom: AppSpacing.sm),
-            child: _MonthSelector(
-              month: _selectedMonth,
-              onPrev: _prevMonth,
-              onNext: _nextMonth,
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screenPadding, AppSpacing.md, AppSpacing.screenPadding, 0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _query = v),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search merchant, note, category or amount',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: searching
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => setState(() {
+                          _searchController.clear();
+                          _query = '';
+                        }),
+                      )
+                    : null,
+                filled: true,
+                fillColor: AppColors.inputFill,
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
             ),
           ),
         ),
+
+        // Month selector (hidden while searching all months)
+        if (!searching)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(
+                  top: AppSpacing.md, bottom: AppSpacing.sm),
+              child: _MonthSelector(
+                month: _selectedMonth,
+                onPrev: _prevMonth,
+                onNext: _nextMonth,
+              ),
+            ),
+          )
+        else
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
 
         // Month total chip
         SliverToBoxAdapter(
@@ -484,11 +583,19 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
                         ),
                       ),
                     const SizedBox(width: 12),
+                    // Running totals of what is shown (like a spreadsheet's
+                    // status-bar sum), so filters and searches add up.
                     Text(
-                      '₹${NumberFormat('#,##,###').format(monthExpenses.where((e) => e.amount > 0 && e.isCountedAsSpend).fold(0.0, (s, e) => s + e.amount))}',
-                      style: AppTextStyles.h3.copyWith(
-                          color: AppColors.expenseRed),
+                      '-₹${NumberFormat('#,##,###').format(totalOut)}',
+                      style: AppTextStyles.h3.copyWith(color: AppColors.expenseRed),
                     ),
+                    if (totalIn > 0) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '+₹${NumberFormat('#,##,###').format(totalIn)}',
+                        style: AppTextStyles.h3.copyWith(color: AppColors.incomeGreen),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -651,14 +758,20 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
                       child: Column(
                         children: [
                           for (int j = 0; j < txns.length; j++) ...[
-                            TransactionTile(
-                              expense: txns[j],
-                              onTap: () => showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                backgroundColor: Colors.transparent,
-                                builder: (_) =>
-                                    AddExpenseSheet(expense: txns[j]),
+                            Dismissible(
+                              key: ValueKey('tx-${txns[j].id}'),
+                              direction: DismissDirection.endToStart,
+                              background: deleteSwipeBackground(),
+                              onDismissed: (_) => deleteWithUndo(context, ref, txns[j]),
+                              child: TransactionTile(
+                                expense: txns[j],
+                                onTap: () => showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) =>
+                                      AddExpenseSheet(expense: txns[j]),
+                                ),
                               ),
                             ),
                             if (j < txns.length - 1)
@@ -706,7 +819,29 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
                 AppSpacing.screenPadding,
                 0,
               ),
-              child: Text('Budget', style: AppTextStyles.h1),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(widget.initialTab == 1 ? 'Transactions' : 'Budget', style: AppTextStyles.h1),
+                  ),
+                  IconButton(
+                    tooltip: 'Month in review',
+                    icon: const Icon(Icons.insights_rounded, color: AppColors.primaryNavy),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const MonthReviewScreen()),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Upcoming bills',
+                    icon: const Icon(Icons.event_note_rounded, color: AppColors.primaryNavy),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UpcomingBillsScreen()),
+                    ),
+                  ),
+                ],
+              ),
             ),
 
             // ── Tab bar ──────────────────────────────────────────────────
@@ -748,13 +883,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
               child: () {
                 final allExpenses = expensesAsync.valueOrNull;
                 if (allExpenses != null) {
-                  final monthExpenses = allExpenses
-                      .where((e) =>
-                          e.date.isAfter(_firstOfMonth
-                              .subtract(const Duration(seconds: 1))) &&
-                          e.date.isBefore(
-                              _lastOfMonth.add(const Duration(seconds: 1))))
-                      .toList();
+                  final monthExpenses = allExpenses.where(_inSelectedMonth).toList();
 
                   final budget = budgetAsync.valueOrNull ?? {};
 
@@ -949,6 +1078,38 @@ class _MonthSelector extends StatelessWidget {
                     ? AppColors.borderLight
                     : AppColors.primaryNavy,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "₹X safe to spend · about ₹Y a day" for the rest of the month.
+class _SafeToSpend extends StatelessWidget {
+  final double left;
+  final int daysLeft;
+  const _SafeToSpend({required this.left, required this.daysLeft});
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat('#,##,###');
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.incomeGreen.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.savings_rounded, color: AppColors.incomeGreen),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              '₹${fmt.format(left)} safe to spend · about ₹${fmt.format(left / daysLeft)} a day '
+              'for $daysLeft more day${daysLeft == 1 ? '' : 's'}',
+              style: AppTextStyles.labelBold,
             ),
           ),
         ],

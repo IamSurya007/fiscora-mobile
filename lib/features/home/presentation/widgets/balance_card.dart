@@ -6,6 +6,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../expenses/services/expense_providers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../../../core/services/amount_privacy.dart';
 
 /// Monthly money-flow card: Income received vs Spends made vs what's left.
 /// Replaces the old "Liquid Balance" card which showed an unreliable account sum.
@@ -16,6 +17,7 @@ class BalanceCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hide = ref.watch(hideAmountsProvider);
     final income = ref.watch(monthlyIncomeProvider);
     final spends = ref.watch(monthlyExpensesProvider);
     final left = ref.watch(monthlyLeftProvider);
@@ -119,7 +121,7 @@ class BalanceCard extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        income > 0 ? '₹${fmt.format(income)}' : '₹0',
+                        maskAmount(hide, income > 0 ? '₹${fmt.format(income)}' : '₹0'),
                         style: AppTextStyles.balanceLarge.copyWith(
                           color: Colors.white,
                           fontSize: 36,
@@ -149,7 +151,7 @@ class BalanceCard extends ConsumerWidget {
               children: [
                 _FlowStat(
                   label: 'Spends',
-                  value: '₹${fmt.format(spends)}',
+                  value: maskAmount(hide, '₹${fmt.format(spends)}'),
                   valueColor: spends > 0 ? AppColors.expenseRed : Colors.white,
                   icon: Icons.arrow_upward_rounded,
                   iconBg: AppColors.expenseRed.withOpacity(0.18),
@@ -163,7 +165,7 @@ class BalanceCard extends ConsumerWidget {
                 ),
                 _FlowStat(
                   label: leftLabel,
-                  value: '₹${fmt.format(left.abs())}',
+                  value: maskAmount(hide, '₹${fmt.format(left.abs())}'),
                   valueColor: leftColor,
                   icon: isSurplus
                       ? Icons.savings_rounded

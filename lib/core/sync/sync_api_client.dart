@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:firebase_auth/firebase_auth.dart';
 
 class SyncApiClient {
@@ -26,6 +27,9 @@ class SyncApiClient {
             // FirebaseAuth might fail or not be configured in testing
             print('SyncApiClient Interceptor error: $e');
           }
+
+          // Request/response bodies hold the user's transactions: never log them in release builds.
+          if (!kDebugMode) return handler.next(options);
 
           // Generate and log the exact curl command line by line to prevent Logcat truncation
           try {
@@ -61,6 +65,7 @@ class SyncApiClient {
           return handler.next(options);
         },
         onResponse: (response, handler) {
+          if (!kDebugMode) return handler.next(response);
           print('\n--- SyncApiClient RESPONSE ---');
           print('Status: ${response.statusCode}');
           print('Path: ${response.requestOptions.path}');
@@ -69,6 +74,7 @@ class SyncApiClient {
           return handler.next(response);
         },
         onError: (e, handler) {
+          if (!kDebugMode) return handler.next(e);
           print('\n--- SyncApiClient ERROR ---');
           print('Path: ${e.requestOptions.path}');
           print('Status: ${e.response?.statusCode}');

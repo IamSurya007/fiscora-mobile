@@ -52,7 +52,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned to the version the app is developed and tested with. Newer
+          # stable releases make IconData final, which breaks phosphor_flutter 2.1.0.
           channel: 'stable'
+          flutter-version: '3.41.4'
           cache: true
 
       - name: Install dependencies
@@ -60,6 +63,9 @@ jobs:
 
       - name: Run Flutter Analyzer
         run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test
 
       - name: Get app version from pubspec.yaml
         id: version
@@ -73,6 +79,10 @@ jobs:
           echo "Building version: $RAW_VERSION (Tag: $TAG_NAME, Filename: $FILENAME)"
 
       - name: Build Android APK
+        # Pushes to main must be release-signed (the build fails without the keystore);
+        # PR builds have no secrets, so they may produce a debug-signed artifact.
+        env:
+          ALLOW_DEBUG_SIGNING: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
         run: flutter build apk --release
 
       - name: Rename APK with version
