@@ -19,6 +19,7 @@ import '../../categories/screens/manage_categories_screen.dart';
 import '../../categories/screens/merchant_rules_screen.dart';
 import '../../business/business_pnl_screen.dart';
 import '../../tax/tax_screen.dart';
+import '../../customers/customers_screen.dart';
 import '../../../core/sync/sync_engine.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -525,6 +526,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const TaxScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  _MenuItem(
+                    icon: Icons.people_alt_rounded,
+                    label: 'Customers',
+                    sublabel: 'Udhaar ledger and payment reminders',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CustomersScreen()),
                       );
                     },
                   ),
