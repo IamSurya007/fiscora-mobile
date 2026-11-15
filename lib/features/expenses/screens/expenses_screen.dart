@@ -78,6 +78,11 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
   DateTime get _firstOfMonth =>
       DateTime(_selectedMonth.year, _selectedMonth.month, 1);
 
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _selectedMonth.year == now.year && _selectedMonth.month == now.month;
+  }
+
   void _prevMonth() => setState(() =>
       _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1));
 
@@ -162,6 +167,25 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
             ),
           ),
         ),
+
+        // Safe to spend: what's left across budgets for the rest of this month.
+        if (_isCurrentMonth)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screenPadding, 0, AppSpacing.screenPadding, AppSpacing.lg),
+              child: _SafeToSpend(
+                left: (totalBudgeted - spent.entries
+                        .where((e) => budget.containsKey(e.key))
+                        .fold(0.0, (s, e) => s + e.value))
+                    .clamp(0.0, double.infinity),
+                daysLeft: DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1)
+                    .difference(DateTime.now())
+                    .inDays
+                    .clamp(1, 31),
+              ),
+            ),
+          ),
 
         SliverToBoxAdapter(
           child: Padding(
@@ -1035,6 +1059,38 @@ class _MonthSelector extends StatelessWidget {
                     ? AppColors.borderLight
                     : AppColors.primaryNavy,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "₹X safe to spend · about ₹Y a day" for the rest of the month.
+class _SafeToSpend extends StatelessWidget {
+  final double left;
+  final int daysLeft;
+  const _SafeToSpend({required this.left, required this.daysLeft});
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat('#,##,###');
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.incomeGreen.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.savings_rounded, color: AppColors.incomeGreen),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              '₹${fmt.format(left)} safe to spend · about ₹${fmt.format(left / daysLeft)} a day '
+              'for $daysLeft more day${daysLeft == 1 ? '' : 's'}',
+              style: AppTextStyles.labelBold,
             ),
           ),
         ],
