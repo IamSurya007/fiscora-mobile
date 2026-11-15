@@ -522,8 +522,14 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                             ),
                           ),
 
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
+                          const SizedBox(width: 8),
+                          // Wraps instead of overflowing on narrow phones
+                          // (the Record button made the row ~2px too wide).
+                          Flexible(
+                            child: Wrap(
+                            alignment: WrapAlignment.end,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            runSpacing: 6,
                             children: [
                               if (!isPaid) ...[
                                 GestureDetector(
@@ -610,6 +616,7 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                                 ),
                               ),
                             ],
+                          ),
                           ),
                         ],
                       ),
