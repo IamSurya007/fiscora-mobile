@@ -57,7 +57,7 @@ class IsarInvestmentRepository implements IInvestmentRepository {
           serverId: existing.serverId,
           serverUpdatedAt: existing.serverUpdatedAt,
           syncStatus: existing.serverId == null ? SyncStatus.pendingCreate : SyncStatus.pendingUpdate,
-          version: existing.version + 1,
+          version: existing.version,
           dirty: true,
         )..id = existing.id;
 

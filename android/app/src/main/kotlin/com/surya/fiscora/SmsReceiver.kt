@@ -9,7 +9,6 @@ import android.content.Intent
 import android.os.Build
 import android.telephony.SmsMessage
 import androidx.core.app.NotificationCompat
-import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -61,7 +60,11 @@ class SmsReceiver : BroadcastReceiver() {
     private val knownBankSenders = setOf(
         "HDFCBK", "ICICIB", "SBIINB", "SBIPSG", "AXISBK", "KOTAKB",
         "PAYTM", "PYTM", "GPAY", "PHONPE", "AMAZONP", "YESBNK",
-        "CENTBK", "PNBSMS", "BOIIND", "UNIONB", "CANBNK", "IDFCFB"
+        "CENTBK", "PNBSMS", "BOIIND", "UNIONB", "CANBNK", "IDFCFB",
+        "SBIUPI", "ATMSBI", "SBICRD", "CBSSBI", "BOBTXN", "BOBSMS", "HSBCIN",
+        "FEDBNK", "RBLBNK", "AUBANK", "INDUSB", "IDBIBK", "IOBCHN", "INDBNK",
+        "UCOBNK", "KVBANK", "KARBNK", "SCBANK", "DBSBNK", "CITIBK", "ONECRD",
+        "AMEXIN", "BOBCRD", "JUPITR", "FIBANK", "MOBIKW", "BHIMUPI"
     )
 
     private fun isLikelyTransactionalSender(sender: String): Boolean {
@@ -88,21 +91,11 @@ class SmsReceiver : BroadcastReceiver() {
     private fun parseSms(body: String, sentAtMs: Long, receivedAtMs: Long): ParsedTxn? {
         val cleanBody = body.lowercase(Locale.ROOT)
 
-        // 1. Hard exclude promotional/marketing/offer language first
-        val promoKeywords = arrayOf(
-            "sale", "offer", "cashback offer", "% off", "discount", "free",
-            "win", "buy now", "shop now", "voucher", "coupon", "deal",
-            "subscribe", "download the app", "click here", "t&c apply",
-            "limited period", "extension", "gift card", "reward points expir",
-            "pre-approved", "preapproved", "pre approved", "eligib",
-            "instant loan", "apply now", "interest rate", "emi starts",
-            "emi at", "loan offer", "credit limit enhance", "insurance",
-            "policy", "invest now", "mutual fund", "trade now",
-            "install", "http://", "https://", "bit.ly", "unsubscribe",
-            "promo", "flat ", "starting at", "hurry", "last chance",
-            "exclusive offer", "congratulations", "you have won", "claim now"
-        )
-        if (promoKeywords.any { cleanBody.contains(it) }) return null
+        // 1. Drop marketing, OTPs and messages about payments that did not (yet) happen.
+        //    Phrases only: single words like "free", "policy" or "https://" also appear
+        //    in genuine debit SMS ("not you? visit https://...", insurance premium debits).
+        if (NON_TRANSACTION_PHRASES.any { cleanBody.contains(it) }) return null
+        if (OTP_PATTERN.containsMatchIn(cleanBody)) return null
 
         // 2. Require SPECIFIC transaction evidence — a masked account/card number
         //    or a real reference/txn id — not just the bare word "account"/"card"
@@ -123,40 +116,16 @@ class SmsReceiver : BroadcastReceiver() {
 
         val hasAccountEvidence = hasMaskedAccountOrCard || hasTxnRef || hasBalanceMention
 
-        val isDebit = cleanBody.contains("debited") ||
-                cleanBody.contains("sent") ||
-                cleanBody.contains("paid") ||
-                cleanBody.contains("spent") ||
-                cleanBody.contains("charged") ||
-                cleanBody.contains("withdrawn")
-
-        val isCredit = cleanBody.contains("credited") ||
-                cleanBody.contains("received") ||
-                cleanBody.contains("deposited") ||
-                cleanBody.contains("refunded")
-
-        if (!isDebit && !isCredit) return null
+        val debit = detectDirection(cleanBody) ?: return null
         if (!hasAccountEvidence) return null
 
-        // Amount parsing regex: Matches Rs. 100, Rs. 1,000, INR 500, etc.
-        val amountPattern = Pattern.compile(
-            "(?:rs\\.?|inr|rupees?)\\s*([0-9,]+\\.?[0-9]*)",
-            Pattern.CASE_INSENSITIVE
-        )
-        val amountMatcher = amountPattern.matcher(body)
-        if (!amountMatcher.find()) return null
-
-        val amountStr = amountMatcher.group(1)?.replace(",", "") ?: return null
-        val amount = amountStr.toDoubleOrNull() ?: return null
-        if (amount <= 0) return null
-
-        val debit = isDebit || !isCredit
+        val amount = extractTransactionAmount(body) ?: return null
 
         // Extract merchant name
         var merchant = "Unknown Merchant"
         val merchantPatterns = arrayOf(
             Pattern.compile(
-                "(?:to|at|towards)\\s+([a-zA-Z0-9\\s\\.\\-\\*]+?)(?:\\s+on|\\s+ref|\\s+via|\\s+from|\\s+balance|\\.|\\n|$)",
+                "\\b(?:to|at|towards)\\s+([a-zA-Z0-9\\s\\.\\-\\*]+?)(?:\\s+on|\\s+ref|\\s+via|\\s+from|\\s+balance|\\.|\\n|$)",
                 Pattern.CASE_INSENSITIVE
             ),
             Pattern.compile(
@@ -180,6 +149,54 @@ class SmsReceiver : BroadcastReceiver() {
         val dateStr = df.format(Date(receivedAtMs))
 
         return ParsedTxn(amount, merchant, debit, dateStr, body, sentAtMs, receivedAtMs)
+    }
+
+    /** true = debit, false = credit, null = not a transaction. Mirrors SmsParserService.detectDirection. */
+    private fun detectDirection(lower: String): Boolean? {
+        val d = STRONG_DEBIT.find(lower)
+        val c = STRONG_CREDIT.find(lower)
+        if (d != null && c != null) return d.range.first < c.range.first
+        if (d != null) return true
+        if (c != null) return false
+        // Weaker verbs: refunds/receipts win over "payment of", so "payment of Rs X received"
+        // (a card bill payment) and "refund for your payment" are credits.
+        if (CREDIT_HINTS.containsMatchIn(lower)) return false
+        if (DEBIT_HINTS.containsMatchIn(lower)) return true
+        return null
+    }
+
+    /** First rupee amount that is not labelled as a balance or limit. */
+    private fun extractTransactionAmount(body: String): Double? {
+        for (m in AMOUNT_PATTERN.findAll(body)) {
+            val before = body.substring(maxOf(0, m.range.first - 20), m.range.first)
+            if (BALANCE_LABEL.containsMatchIn(before)) continue
+            val value = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: continue
+            if (value > 0) return value
+        }
+        return null
+    }
+
+    private companion object {
+        val NON_TRANSACTION_PHRASES = arrayOf(
+            "pre-approved", "preapproved", "pre approved", "instant loan", "apply now",
+            "loan offer", "credit limit enhance", "win up to", "you have won", "claim your reward",
+            "click to apply", "download the app to claim", "buy now pay later", "shop now",
+            "exclusive offer", "limited period offer", "unsubscribe",
+            "declined", "has failed", "transaction failed", "unsuccessful",
+            "could not be processed", "will be debited", "will be deducted", "is due on",
+            "payment due", "minimum amount due", "total amount due", "has requested",
+            "collect request", "is scheduled"
+        )
+        val OTP_PATTERN = Regex("\\b(?:otp|one[ -]time password|verification code)\\b")
+
+        fun words(vararg w: String) = Regex("\\b(?:" + w.joinToString("|") { Regex.escape(it) } + ")\\b")
+        val STRONG_DEBIT = words("debited", "debit of")
+        val STRONG_CREDIT = words("credited", "credit of")
+        val CREDIT_HINTS = words("refund", "refunded", "reversed", "reversal", "cashback", "received", "deposited")
+        val DEBIT_HINTS = words("sent", "paid", "spent", "charged", "withdrawn", "withdrawal", "purchase", "txn of", "payment of", "used at")
+
+        val AMOUNT_PATTERN = Regex("(?:rs|inr|rupees?|₹)\\.?\\s*:?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
+        val BALANCE_LABEL = Regex("(?:bal(?:ance)?|limit|lmt)[^0-9]{0,12}$", RegexOption.IGNORE_CASE)
     }
 
     private fun cleanMerchantName(name: String): String {
@@ -216,13 +233,12 @@ class SmsReceiver : BroadcastReceiver() {
             "receivedAtMs" to txn.receivedAtMs
         )
 
-        // 1. Save to SharedPreferences so it persists natively for auto-saving
+        // 1. Queue it so Flutter saves it even if the app is not running
+        val id = java.util.UUID.randomUUID().toString()
+        txnMap["id"] = id
         try {
-            val prefs = context.getSharedPreferences("fiscora_sms_prefs", Context.MODE_PRIVATE)
-            val existingJson = prefs.getString("pending_transactions", "[]") ?: "[]"
-            val jsonArray = JSONArray(existingJson)
-
-            val obj = JSONObject().apply {
+            PendingSmsStore.add(context, JSONObject().apply {
+                put("id", id)
                 put("amount", txn.amount)
                 put("merchant", txn.merchant)
                 put("isDebit", txn.isDebit)
@@ -232,9 +248,7 @@ class SmsReceiver : BroadcastReceiver() {
                 put("sender", sender)
                 put("sentAtMs", txn.sentAtMs)
                 put("receivedAtMs", txn.receivedAtMs)
-            }
-            jsonArray.put(obj)
-            prefs.edit().putString("pending_transactions", jsonArray.toString()).apply()
+            })
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -293,7 +307,7 @@ class SmsReceiver : BroadcastReceiver() {
         val direction = if (txn.isDebit) "debited" else "credited"
         val message = String.format(
             Locale.ROOT,
-            "₹%.2f %s at %s. Saved to Fiscora.",
+            "₹%.2f %s at %s. Open Fiscora to review.",
             txn.amount,
             direction,
             txn.merchant
@@ -301,7 +315,7 @@ class SmsReceiver : BroadcastReceiver() {
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
-            .setContentTitle("Transaction Auto-Saved")
+            .setContentTitle("Transaction captured")
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)

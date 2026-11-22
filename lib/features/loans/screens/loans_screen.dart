@@ -8,6 +8,8 @@ import '../../../core/widgets/confirm_delete_dialog.dart';
 import '../models/loan_model.dart';
 import '../services/loan_providers.dart';
 import 'add_loan_sheet.dart';
+import 'loan_emi_details.dart';
+import 'record_repayment_sheet.dart';
 
 class LoansScreen extends ConsumerWidget {
   const LoansScreen({super.key});
@@ -20,9 +22,9 @@ class LoansScreen extends ConsumerWidget {
 
     final fmt = NumberFormat('#,##,###');
     final totalOwed =
-        taken.where((l) => l.status != 'paid').fold(0.0, (s, l) => s + l.currentTotal);
+        taken.where((l) => l.status != 'paid').fold(0.0, (s, l) => s + l.outstanding);
     final totalOwedToMe =
-        given.where((l) => l.status != 'paid').fold(0.0, (s, l) => s + l.currentTotal);
+        given.where((l) => l.status != 'paid').fold(0.0, (s, l) => s + l.outstanding);
 
     return Scaffold(
       backgroundColor: AppColors.pageBackground,
@@ -223,7 +225,9 @@ class _LoanCardState extends ConsumerState<LoanCard> {
     final newStatus = widget.loan.status == 'paid' ? 'active' : 'paid';
     final updatedLoan = widget.loan.copyWith(
       status: newStatus,
-      total: widget.loan.currentTotal,
+      total: widget.loan.isEmi
+          ? widget.loan.totalPayable
+          : widget.loan.currentTotal,
     );
     await ref.read(loanNotifierProvider.notifier).updateLoan(updatedLoan);
   }
@@ -250,6 +254,8 @@ class _LoanCardState extends ConsumerState<LoanCard> {
     final daysLeft = loan.daysRemaining;
     final isPaid = loan.status == 'paid';
     final isOverdue = loan.status == 'overdue' || loan.isOverdue;
+    final nextDue = loan.nextDueDate;
+    final headlineAmount = isPaid ? loan.totalPayable : loan.outstanding;
 
     Color statusColor;
     Color statusBg;
@@ -352,12 +358,14 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                                 fontSize: 11,
                               ),
                             ),
-                            if (loan.repaymentDate != null && !isPaid) ...[
+                            if (nextDue != null && !isPaid) ...[
                               Text(' · ', style: AppTextStyles.caption),
                               Text(
                                 isOverdue
                                     ? 'Overdue (${daysLeft?.abs()}d)'
-                                    : 'Due ${DateFormat('d MMM').format(loan.repaymentDate!)}',
+                                    : loan.isEmi
+                                        ? 'EMI ₹${fmt.format(loan.nextEmi?.emi ?? loan.effectiveEmi)} · ${DateFormat('d MMM').format(nextDue)}'
+                                        : 'Due ${DateFormat('d MMM').format(nextDue)}',
                                 style: AppTextStyles.caption.copyWith(
                                   color: isOverdue
                                       ? AppColors.expenseRed
@@ -381,7 +389,7 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '₹${fmt.format(loan.currentTotal)}',
+                            '₹${fmt.format(headlineAmount)}',
                             style: AppTextStyles.h3.copyWith(
                               fontSize: 14,
                               color: isGiven
@@ -444,8 +452,8 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                           ),
                           Expanded(
                             child: _LoanStat(
-                              label: 'Total Owed',
-                              value: '₹${fmt.format(loan.currentTotal)}',
+                              label: loan.repayments.isEmpty ? 'Total Owed' : 'Outstanding',
+                              value: '₹${fmt.format(loan.outstanding)}',
                               valueStyle: AppTextStyles.h3.copyWith(
                                 fontSize: 13,
                                 color: isGiven
@@ -454,16 +462,16 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                               ),
                             ),
                           ),
-                          if (loan.repaymentDate != null)
+                          if (nextDue != null)
                             Expanded(
                               child: _LoanStat(
-                                label: 'Due Date',
-                                value: DateFormat('d MMM yyyy')
-                                    .format(loan.repaymentDate!),
+                                label: loan.isEmi ? 'Next EMI' : 'Due Date',
+                                value: DateFormat('d MMM yyyy').format(nextDue),
                               ),
                             ),
                         ],
                       ),
+                      LoanEmiDetails(loan: loan),
                       if (loan.notes.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Container(
@@ -514,9 +522,42 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                             ),
                           ),
 
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
+                          const SizedBox(width: 8),
+                          // Wraps instead of overflowing on narrow phones
+                          // (the Record button made the row ~2px too wide).
+                          Flexible(
+                            child: Wrap(
+                            alignment: WrapAlignment.end,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            runSpacing: 6,
                             children: [
+                              if (!isPaid) ...[
+                                GestureDetector(
+                                  onTap: () => showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (_) =>
+                                        RecordRepaymentSheet(loan: loan),
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryNavy,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'Record',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
                               // Edit button
                               GestureDetector(
                                 onTap: () => showModalBottomSheet(
@@ -575,6 +616,7 @@ class _LoanCardState extends ConsumerState<LoanCard> {
                                 ),
                               ),
                             ],
+                          ),
                           ),
                         ],
                       ),

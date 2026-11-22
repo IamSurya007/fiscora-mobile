@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../domain/emi.dart';
 import '../models/loan_model.dart';
 import '../services/loan_providers.dart';
 
@@ -21,11 +22,15 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
   final _principalController = TextEditingController();
   final _interestRateController = TextEditingController();
   final _notesController = TextEditingController();
+  final _tenureController = TextEditingController();
+  final _emiController = TextEditingController();
 
   String _type = 'given'; // given | taken
   DateTime _startDate = DateTime.now();
   DateTime? _repaymentDate;
   bool _isSaving = false;
+  bool _isEmi = false;
+  DateTime _emiStartDate = emiDueDate(DateTime.now(), 1);
 
   @override
   void initState() {
@@ -43,7 +48,63 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
       _type = loan.type;
       _startDate = loan.createdAt;
       _repaymentDate = loan.repaymentDate;
+      _isEmi = loan.isEmi;
+      if (loan.tenureMonths != null) {
+        _tenureController.text = loan.tenureMonths.toString();
+      }
+      if (loan.emiAmount != null) {
+        _emiController.text = _plain(loan.emiAmount!);
+      }
+      if (loan.emiStartDate != null) _emiStartDate = loan.emiStartDate!;
     }
+    // Refresh the computed EMI preview as the inputs change.
+    for (final c in [
+      _principalController,
+      _interestRateController,
+      _tenureController,
+      _emiController,
+    ]) {
+      c.addListener(_onInputChanged);
+    }
+  }
+
+  void _onInputChanged() {
+    if (mounted && _isEmi) setState(() {});
+  }
+
+  static String _plain(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+
+  double get _principalInput =>
+      double.tryParse(_principalController.text.trim()) ?? 0;
+  double get _rateInput =>
+      double.tryParse(_interestRateController.text.trim()) ?? 0;
+  int get _tenureInput => int.tryParse(_tenureController.text.trim()) ?? 0;
+  double? get _emiOverrideInput {
+    final v = double.tryParse(_emiController.text.trim());
+    return (v != null && v > 0) ? v : null;
+  }
+
+  double get _computedEmi =>
+      computeEmi(_principalInput, _rateInput, _tenureInput);
+
+  Future<void> _pickEmiStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _emiStartDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: AppColors.accent,
+            onPrimary: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _emiStartDate = picked);
   }
 
   @override
@@ -52,6 +113,8 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
     _principalController.dispose();
     _interestRateController.dispose();
     _notesController.dispose();
+    _tenureController.dispose();
+    _emiController.dispose();
     super.dispose();
   }
 
@@ -105,7 +168,20 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
     final days = DateTime.now().difference(_startDate).inDays;
     final elapsedDays = days > 0 ? days : 0;
     final interest = principal * (interestRate / 100.0) * (elapsedDays / 365.0);
-    final calculatedTotal = principal + interest;
+    var calculatedTotal = principal + interest;
+
+    if (_isEmi && _tenureInput <= 0) return; // an EMI loan needs a tenure
+    final isEmi = _isEmi;
+    final emiOverride = isEmi ? _emiOverrideInput : null;
+    if (isEmi) {
+      calculatedTotal = scheduleTotal(buildSchedule(
+        principal: principal,
+        annualRatePercent: interestRate,
+        tenureMonths: _tenureInput,
+        startDate: _emiStartDate,
+        emiOverride: emiOverride,
+      ));
+    }
 
     Navigator.pop(context);
 
@@ -120,6 +196,12 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
         interestRate: interestRate,
         repaymentDate: _repaymentDate,
         createdAt: _startDate,
+        notes: _notesController.text.trim(),
+        isEmi: isEmi,
+        emiAmount: () => emiOverride,
+        tenureMonths: isEmi ? _tenureInput : null,
+        emiStartDate: isEmi ? _emiStartDate : null,
+        emiDayOfMonth: isEmi ? _emiStartDate.day : null,
       );
       ref.read(loanNotifierProvider.notifier).updateLoan(updatedLoan);
     } else {
@@ -135,6 +217,11 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
         status: 'active',
         notes: _notesController.text.trim(),
         createdAt: _startDate,
+        isEmi: isEmi,
+        emiAmount: emiOverride,
+        tenureMonths: isEmi ? _tenureInput : null,
+        emiStartDate: isEmi ? _emiStartDate : null,
+        emiDayOfMonth: isEmi ? _emiStartDate.day : null,
       );
       ref.read(loanNotifierProvider.notifier).addLoan(loan);
     }
@@ -295,6 +382,97 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: AppSpacing.sm),
+
+            // EMI toggle
+            Container(
+              padding: const EdgeInsets.only(left: AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.inputFill,
+                borderRadius: BorderRadius.circular(AppSpacing.chipRadius),
+                border: Border.all(color: AppColors.borderLight),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.event_repeat_rounded,
+                      size: 16, color: AppColors.primaryNavy),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Repaid in monthly EMIs',
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: AppColors.primaryNavy),
+                    ),
+                  ),
+                  Switch(
+                    value: _isEmi,
+                    activeTrackColor: AppColors.accent,
+                    onChanged: (v) => setState(() => _isEmi = v),
+                  ),
+                ],
+              ),
+            ),
+            if (_isEmi) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: _Field(
+                      controller: _tenureController,
+                      label: 'Tenure (months)',
+                      hint: 'e.g. 24',
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: _Field(
+                      controller: _emiController,
+                      label: 'EMI ₹ (optional)',
+                      hint: _computedEmi > 0 ? _plain(_computedEmi) : 'Auto',
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                _computedEmi > 0
+                    ? 'Calculated EMI: ₹${NumberFormat('#,##,##0.00').format(_computedEmi)}'
+                        '${_emiOverrideInput != null ? ' · using your EMI' : ''}'
+                    : 'Enter principal, rate and tenure to calculate the EMI',
+                style: AppTextStyles.caption,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              GestureDetector(
+                onTap: _pickEmiStartDate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputFill,
+                    borderRadius: BorderRadius.circular(AppSpacing.chipRadius),
+                    border: Border.all(color: AppColors.borderLight),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_month_rounded,
+                          size: 16, color: AppColors.primaryNavy),
+                      const SizedBox(width: 8),
+                      Text(
+                        'First EMI: ${DateFormat('d MMM yyyy').format(_emiStartDate)}',
+                        style: AppTextStyles.bodyMedium
+                            .copyWith(color: AppColors.primaryNavy),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.arrow_drop_down_rounded,
+                          color: AppColors.primaryNavy),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
 
             SizedBox(

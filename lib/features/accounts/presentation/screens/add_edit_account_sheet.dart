@@ -22,10 +22,14 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
   final _institutionController = TextEditingController();
   final _balanceController = TextEditingController();
   final _limitController = TextEditingController();
+  final _dueDayController = TextEditingController();
 
   AccountType _selectedType = AccountType.bank_account;
   int _selectedColor = AccountType.bank_account.defaultColor.value;
   bool _isSaving = false;
+
+  /// Who the account belongs to: personal, business, or mixed (asks per capture).
+  String _ownership = 'personal';
 
   final List<int> _colorPalette = const [
     0xFF1E3A8A, // Navy
@@ -48,11 +52,13 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
       _balanceController.text = acc.currentBalance == acc.currentBalance.toInt()
           ? acc.currentBalance.toInt().toString()
           : acc.currentBalance.toString();
+      _dueDayController.text = acc.dueDay?.toString() ?? '';
       _limitController.text = acc.creditLimit == acc.creditLimit.toInt()
           ? acc.creditLimit.toInt().toString()
           : acc.creditLimit.toString();
       _selectedType = acc.type;
       _selectedColor = acc.colorValue;
+      _ownership = acc.ownership;
     }
   }
 
@@ -62,7 +68,13 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
     _institutionController.dispose();
     _balanceController.dispose();
     _limitController.dispose();
+    _dueDayController.dispose();
     super.dispose();
+  }
+
+  int? _dueDay() {
+    final v = int.tryParse(_dueDayController.text.trim());
+    return v != null && v >= 1 && v <= 31 ? v : null;
   }
 
   Future<void> _save() async {
@@ -92,9 +104,17 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
         institution: _institutionController.text.trim(),
         currentBalance: balance,
         creditLimit: _selectedType == AccountType.credit_card ? limit : 0.0,
+        dueDay: _selectedType == AccountType.credit_card ? _dueDay() : null,
         colorValue: _selectedColor,
+        ownership: _ownership,
       );
       await notifier.updateAccount(updated);
+      // Only an edited balance field moves the balance. Comparing with the value
+      // the form opened with (not the live balance) means an SMS imported while
+      // the sheet was open isn't undone by saving a rename.
+      if (balance != existing.currentBalance) {
+        await notifier.updateAccountBalance(existing.id, balance);
+      }
     } else {
       final newAccount = Account(
         id: const Uuid().v4(),
@@ -103,7 +123,9 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
         institution: _institutionController.text.trim(),
         currentBalance: balance,
         creditLimit: _selectedType == AccountType.credit_card ? limit : 0.0,
+        dueDay: _selectedType == AccountType.credit_card ? _dueDay() : null,
         colorValue: _selectedColor,
+        ownership: _ownership,
         createdAt: DateTime.now(),
       );
       await notifier.addAccount(newAccount);
@@ -313,6 +335,54 @@ class _AddEditAccountSheetState extends ConsumerState<AddEditAccountSheet> {
                 ],
               ],
             ),
+            if (_selectedType == AccountType.credit_card) ...[
+              const SizedBox(height: AppSpacing.md),
+              Text('Payment due day (1-31)', style: AppTextStyles.label),
+              const SizedBox(height: AppSpacing.xs),
+              TextField(
+                controller: _dueDayController,
+                keyboardType: TextInputType.number,
+                style: AppTextStyles.bodyMedium,
+                decoration: InputDecoration(
+                  hintText: 'e.g. 5 — shows the bill in Upcoming bills',
+                  filled: true,
+                  fillColor: AppColors.inputFill,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.borderLight),
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.md),
+
+            // Ownership: decides the default scope of its transactions
+            Text('Used for', style: AppTextStyles.label),
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (value, label) in const [
+                  ('personal', 'Personal'),
+                  ('business', 'Business'),
+                  ('mixed', 'Mixed'),
+                ])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: _ownership == value,
+                    onSelected: (_) => setState(() => _ownership = value),
+                  ),
+              ],
+            ),
+            if (_ownership == 'mixed')
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Captures from this account ask personal or business.',
+                  style: AppTextStyles.caption,
+                ),
+              ),
             const SizedBox(height: AppSpacing.md),
 
             // Color Accent Selector

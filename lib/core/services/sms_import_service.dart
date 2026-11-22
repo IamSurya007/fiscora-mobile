@@ -3,6 +3,7 @@ import '../../features/categories/models/category.dart';
 import '../../features/categories/services/category_resolver.dart';
 import '../../features/categories/services/merchant_categorizer.dart';
 import '../../features/expenses/models/expense_model.dart';
+import '../../features/expenses/models/ledger_rules.dart';
 import '../repositories/i_account_repository.dart';
 import '../repositories/i_expense_repository.dart';
 import 'sms_account_resolver.dart';
@@ -73,12 +74,25 @@ class SmsImportService {
     final accountId = await SmsAccountResolver(_accountRepo).resolveAccountId(txn);
     final (:selection, :fromRule) = await categorize(txn);
 
+    // A credit card bill payment shows up twice: a debit SMS from the bank and
+    // a "payment received" SMS from the card. It is one transfer, not spend
+    // plus income, so link the two instead of recording both.
+    final cardPayment = await _matchCardPayment(txn, accountId);
+    if (cardPayment.skip) return null;
+    if (cardPayment.upgraded != null) return cardPayment.upgraded;
+    final isCardPayment = cardPayment.toCardId != null || cardPayment.cardSide;
+    final account = await _accountRepo.getAccount(accountId);
+
     final expense = Expense(
       id: txn.dedupKey,
       amount: txn.isDebit ? txn.amount : -txn.amount,
       category: '',
-      categoryId: selection.categoryId,
-      subcategoryId: selection.subcategoryId,
+      categoryId: isCardPayment ? 'transfers' : selection.categoryId,
+      subcategoryId: isCardPayment ? 'transfers.self' : selection.subcategoryId,
+      transferAccountId: cardPayment.toCardId ?? '',
+      isCountedAsSpend: !isCardPayment,
+      // Captured automatically: the user confirms it in the review inbox.
+      needsReview: true,
       note: note,
       date: txn.date,
       method: txn.accountType == AccountType.credit_card
@@ -88,9 +102,64 @@ class SmsImportService {
       merchant: txn.merchant,
       accountId: accountId,
       createdAt: DateTime.now(),
+      scope: defaultScopeFor(account?.ownership),
     );
 
     await _expenseRepo.addExpense(expense);
     return expense;
+  }
+
+  static final _cardPaymentWords = RegExp(
+    r'\b(?:credit card|card bill|cc bill|cc payment|card payment|payment towards (?:your )?card)\b',
+    caseSensitive: false,
+  );
+  static const _pairWindow = Duration(days: 5);
+
+  /// Recognises both halves of a card bill payment (see [import]).
+  Future<({bool skip, Expense? upgraded, String? toCardId, bool cardSide})> _matchCardPayment(
+    ParsedSms txn,
+    String accountId,
+  ) async {
+    const none = (skip: false, upgraded: null, toCardId: null, cardSide: false);
+    final accounts = await _accountRepo.getAccounts();
+    final cards = accounts.where((a) => a.isCreditCard).toList();
+    if (cards.isEmpty) return none;
+
+    final from = accounts.where((a) => a.id == accountId).firstOrNull;
+    final isCardAccount = from?.isCreditCard ?? txn.accountType == AccountType.credit_card;
+
+    // Card side: money received on the card account.
+    if (!txn.isDebit && isCardAccount) {
+      final near = await _expenseRepo.findExpensesNear(amount: txn.amount, date: txn.date, window: _pairWindow);
+      final alreadyPaid = near.any((e) => e.transferAccountId == accountId);
+      if (alreadyPaid) return (skip: true, upgraded: null, toCardId: null, cardSide: false);
+      return (skip: false, upgraded: null, toCardId: null, cardSide: true);
+    }
+
+    // Bank side: a debit that mentions paying a card.
+    if (!txn.isDebit || isCardAccount || !_cardPaymentWords.hasMatch(txn.body)) return none;
+    final mentioned = cards.where((c) {
+      final last4 = RegExp(r'(\d{4})').allMatches(c.name).map((m) => m.group(1)).toSet();
+      return last4.any((d) => d != null && txn.body.contains(d));
+    }).toList();
+    final card = mentioned.length == 1 ? mentioned.first : (cards.length == 1 ? cards.first : null);
+    if (card == null) return none;
+
+    // The card's "payment received" SMS came first: turn it into the full transfer.
+    final near = await _expenseRepo.findExpensesNear(amount: -txn.amount, date: txn.date, window: _pairWindow);
+    final cardHalf = near
+        .where((e) => e.accountId == card.id && e.transferAccountId.isEmpty && e.categoryId == 'transfers')
+        .firstOrNull;
+    if (cardHalf != null) {
+      final upgraded = cardHalf.copyWith(
+        amount: txn.amount,
+        accountId: accountId,
+        transferAccountId: card.id,
+        isCountedAsSpend: false,
+      );
+      await _expenseRepo.updateExpense(upgraded);
+      return (skip: false, upgraded: upgraded, toCardId: card.id, cardSide: false);
+    }
+    return (skip: false, upgraded: null, toCardId: card.id, cardSide: false);
   }
 }

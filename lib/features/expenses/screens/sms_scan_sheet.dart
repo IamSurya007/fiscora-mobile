@@ -108,8 +108,8 @@ class _SmsScanSheetState extends ConsumerState<SmsScanSheet> {
     Future.microtask(() async {
       var imported = 0;
       for (final txn in selectedTxns) {
-        final body = txn.body.length > 30 ? '${txn.body.substring(0, 30)}...' : txn.body;
-        final saved = await importer.import(txn, note: 'Imported from SMS: "$body"');
+        // Only parsed fields leave the phone; the SMS text itself is not stored.
+        final saved = await importer.import(txn, note: 'Imported from SMS');
         if (saved != null) imported++;
       }
 

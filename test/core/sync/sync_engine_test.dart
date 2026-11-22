@@ -51,7 +51,7 @@ void main() {
       expect(res.action, equals(ConflictResolution.delete));
     });
 
-    test('Divergent loan status triggers conflict', () {
+    test('A pull never overwrites an unsynced local edit (the server flags conflicts)', () {
       final res = ConflictResolver.resolve(
         entityType: 'loan',
         localIsDirty: true,
@@ -64,23 +64,39 @@ void main() {
         localPayload: {'status': 'PAID', 'principal': 5000.0},
         remotePayload: {'status': 'OVERDUE', 'principal': 5000.0},
       );
-      expect(res.action, equals(ConflictResolution.conflict));
+      expect(res.action, equals(ConflictResolution.useLocal));
     });
 
-    test('Standard LWW by timestamp when version conflict occurs and status is same', () {
+    test('Clocks are not compared: an older-looking remote with a newer version wins', () {
       final res = ConflictResolver.resolve(
-        entityType: 'loan',
-        localIsDirty: true,
+        entityType: 'expense',
+        localIsDirty: false,
         localVersion: 1,
-        localUpdatedAt: DateTime(2026, 7, 12, 10),
+        localUpdatedAt: DateTime(2026, 7, 12, 11), // fast device clock
         localIsDeleted: false,
         remoteVersion: 2,
-        remoteUpdatedAt: DateTime(2026, 7, 12, 11),
+        remoteUpdatedAt: DateTime(2026, 7, 12, 10),
         remoteIsDeleted: false,
-        localPayload: {'status': 'ACTIVE', 'principal': 4000.0},
-        remotePayload: {'status': 'ACTIVE', 'principal': 5000.0},
+        localPayload: {'amount': 100.0},
+        remotePayload: {'amount': 120.0},
       );
       expect(res.action, equals(ConflictResolution.useRemote));
+    });
+
+    test('Same version and clean local: nothing to apply', () {
+      final res = ConflictResolver.resolve(
+        entityType: 'expense',
+        localIsDirty: false,
+        localVersion: 4,
+        localUpdatedAt: DateTime(2026, 7, 12),
+        localIsDeleted: false,
+        remoteVersion: 4,
+        remoteUpdatedAt: DateTime(2026, 7, 13),
+        remoteIsDeleted: false,
+        localPayload: {'amount': 100.0},
+        remotePayload: {'amount': 100.0},
+      );
+      expect(res.action, equals(ConflictResolution.useLocal));
     });
   });
 

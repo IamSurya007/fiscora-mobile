@@ -58,7 +58,7 @@ class IsarLoanRepository implements ILoanRepository {
           serverId: existing.serverId,
           serverUpdatedAt: existing.serverUpdatedAt,
           syncStatus: existing.serverId == null ? SyncStatus.pendingCreate : SyncStatus.pendingUpdate,
-          version: existing.version + 1,
+          version: existing.version,
           dirty: true,
         )..id = existing.id;
 
@@ -86,7 +86,6 @@ class IsarLoanRepository implements ILoanRepository {
 
       if (existing != null) {
         existing.status = status;
-        existing.version++;
         existing.dirty = true;
         existing.syncStatus = existing.serverId == null ? SyncStatus.pendingCreate.name : SyncStatus.pendingUpdate.name;
         existing.updatedAt = DateTime.now().toUtc();

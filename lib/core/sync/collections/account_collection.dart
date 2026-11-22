@@ -11,8 +11,16 @@ class AccountCollection with SyncMetadataMixin {
   late String name;
   late String type;
   late String institution;
+  /// Derived locally: openingBalance + effects of live transactions
+  /// (see core/services/account_balances.dart). Never pushed as the truth.
   late double currentBalance;
+
+  /// Balance before any recorded transaction; null until first computed.
+  double? openingBalance;
   late double creditLimit;
+  int? statementDay;
+  int? dueDay;
+  String ownership = 'personal';
   late int colorValue;
   late String iconName;
   late bool isArchived;
@@ -34,7 +42,11 @@ class AccountCollection with SyncMetadataMixin {
       ..type = account.type.name
       ..institution = account.institution
       ..currentBalance = account.currentBalance
+      ..openingBalance = account.openingBalance
       ..creditLimit = account.creditLimit
+      ..statementDay = account.statementDay
+      ..dueDay = account.dueDay
+      ..ownership = account.ownership
       ..colorValue = account.colorValue
       ..iconName = account.iconName
       ..isArchived = account.isArchived
@@ -61,7 +73,11 @@ class AccountCollection with SyncMetadataMixin {
       ),
       institution: institution,
       currentBalance: currentBalance,
+      openingBalance: openingBalance,
       creditLimit: creditLimit,
+      statementDay: statementDay,
+      dueDay: dueDay,
+      ownership: ownership,
       colorValue: colorValue,
       iconName: iconName,
       isArchived: isArchived,
@@ -74,10 +90,16 @@ class AccountCollection with SyncMetadataMixin {
       'name': name,
       'type': type,
       'institution': institution,
+      // The server derives the balance; it only needs openingBalance. The
+      // current figure is still sent for servers older than that change.
+      if (openingBalance != null) 'openingBalance': openingBalance,
       'currentBalance': currentBalance,
       'current_balance': currentBalance,
       'creditLimit': creditLimit,
       'credit_limit': creditLimit,
+      'statementDay': statementDay,
+      'dueDay': dueDay,
+      'ownership': ownership,
       'colorValue': colorValue,
       'color_value': colorValue,
       'iconName': iconName,

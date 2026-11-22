@@ -13,6 +13,7 @@ class InvestmentCollection with SyncMetadataMixin {
   late double monthlyAmount;
   late double principal;
   late double maturityAmount;
+  double? currentValue;
   late int durationMonths;
   late DateTime startDate;
   late DateTime maturityDate;
@@ -35,6 +36,7 @@ class InvestmentCollection with SyncMetadataMixin {
       ..monthlyAmount = investment.monthlyAmount
       ..principal = investment.principal
       ..maturityAmount = investment.maturityAmount
+      ..currentValue = investment.currentValue
       ..durationMonths = investment.durationMonths
       ..startDate = investment.startDate
       ..maturityDate = investment.maturityDate
@@ -59,6 +61,7 @@ class InvestmentCollection with SyncMetadataMixin {
       monthlyAmount: monthlyAmount,
       principal: principal,
       maturityAmount: maturityAmount,
+      currentValue: currentValue,
       durationMonths: durationMonths,
       startDate: startDate,
       maturityDate: maturityDate,
@@ -73,6 +76,7 @@ class InvestmentCollection with SyncMetadataMixin {
       'monthlyAmount': monthlyAmount,
       'principal': principal,
       'maturityAmount': maturityAmount,
+      'currentValue': currentValue,
       'durationMonths': durationMonths,
       'startDate': "${startDate.year.toString().padLeft(4, '0')}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}", // YYYY-MM-DD
       'maturityDate': "${maturityDate.year.toString().padLeft(4, '0')}-${maturityDate.month.toString().padLeft(2, '0')}-${maturityDate.day.toString().padLeft(2, '0')}", // YYYY-MM-DD

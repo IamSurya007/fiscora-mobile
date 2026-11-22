@@ -8,6 +8,7 @@ import '../../features/expenses/models/expense_model.dart';
 import '../../features/accounts/services/account_providers.dart';
 import '../../features/categories/services/category_providers.dart';
 import '../../features/categories/widgets/category_icon.dart';
+import '../services/amount_privacy.dart';
 
 /// Fold / Axio style transaction tile — compact collapsed state, rich expanded state on tap.
 class TransactionTile extends ConsumerStatefulWidget {
@@ -33,14 +34,23 @@ class _TransactionTileState extends ConsumerState<TransactionTile> {
   Widget build(BuildContext context) {
     final expense = widget.expense;
     final isDebit = expense.amount > 0;
-    final isExcluded = !expense.isCountedAsSpend;
-    final amountText =
-        '${isDebit ? '-' : '+'}₹${NumberFormat('#,##,###').format(expense.amount.abs())}';
+    final isTransfer = expense.transferAccountId.isNotEmpty;
+    // A transfer is never "excluded" in the spend sense; it just isn't spend.
+    final isExcluded = !expense.isCountedAsSpend && !isTransfer;
+    final hide = ref.watch(hideAmountsProvider);
+    final rawAmountText = isTransfer
+        ? '₹${NumberFormat('#,##,###').format(expense.amount.abs())}'
+        : '${isDebit ? '-' : '+'}₹${NumberFormat('#,##,###').format(expense.amount.abs())}';
+    final amountText = maskAmount(hide, rawAmountText);
 
     final accounts = ref.watch(accountsStreamProvider).valueOrNull ?? [];
     final matchingAccounts = accounts.where((a) => a.id == expense.accountId);
     final account = matchingAccounts.isNotEmpty ? matchingAccounts.first : null;
     final accountName = account?.name ?? '';
+    final toMatches = accounts.where((a) => a.id == expense.transferAccountId);
+    final transferLabel = isTransfer
+        ? '${accountName.isEmpty ? 'Account' : accountName} → ${toMatches.isNotEmpty ? toMatches.first.name : 'Account'}'
+        : null;
 
     final registry = ref.watch(categoryRegistryProvider);
     final categoryDisplay = registry.label(
@@ -95,11 +105,12 @@ class _TransactionTileState extends ConsumerState<TransactionTile> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        expense.merchant.isNotEmpty
-                            ? expense.merchant
-                            : expense.note.isNotEmpty
-                                ? expense.note
-                                : leafName,
+                        transferLabel ??
+                            (expense.merchant.isNotEmpty
+                                ? expense.merchant
+                                : expense.note.isNotEmpty
+                                    ? expense.note
+                                    : leafName),
                         style: AppTextStyles.h3.copyWith(
                           color: isExcluded ? AppColors.mutedText : null,
                         ),
@@ -126,7 +137,7 @@ class _TransactionTileState extends ConsumerState<TransactionTile> {
                         isDebit: isDebit,
                         fontSize: 15,
                       ).copyWith(
-                        color: isExcluded ? AppColors.mutedText : null,
+                        color: (isExcluded || isTransfer) ? AppColors.mutedText : null,
                       ),
                     ),
                     const SizedBox(height: 2),

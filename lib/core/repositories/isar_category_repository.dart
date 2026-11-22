@@ -41,7 +41,7 @@ class IsarCategoryRepository implements ICategoryRepository {
         serverId: existing?.serverId,
         serverUpdatedAt: existing?.serverUpdatedAt,
         syncStatus: existing?.serverId == null ? SyncStatus.pendingCreate : SyncStatus.pendingUpdate,
-        version: (existing?.version ?? 0) + 1,
+        version: existing?.version ?? 1,
         dirty: true,
       )..id = existing?.id ?? isar.categoryCollections.autoIncrement();
       isar.categoryCollections.put(col);
@@ -120,7 +120,6 @@ class IsarCategoryRepository implements ICategoryRepository {
           ..subcategoryId = target.sub?.id ?? ''
           ..category = target.parent.name
           ..subcategory = target.sub?.name ?? ''
-          ..version += 1
           ..dirty = true
           ..syncStatus = exp.serverId == null ? SyncStatus.pendingCreate.name : SyncStatus.pendingUpdate.name
           ..updatedAt = DateTime.now().toUtc();
@@ -143,7 +142,6 @@ class IsarCategoryRepository implements ICategoryRepository {
           ..categoryId = target.parent.id
           ..subcategoryId = target.sub?.id ?? ''
           ..category = target.parent.name
-          ..version += 1
           ..dirty = true
           ..syncStatus = rule.serverId == null ? SyncStatus.pendingCreate.name : SyncStatus.pendingUpdate.name
           ..updatedAt = DateTime.now().toUtc();

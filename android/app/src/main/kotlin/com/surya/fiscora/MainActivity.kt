@@ -6,13 +6,13 @@ import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import org.json.JSONArray
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.surya.fiscora/sms_channel"
     private var pendingIntentTransaction: HashMap<String, Any>? = null
 
     companion object {
+        private const val INTENT_TXN_ID = "notification-intent"
         private var instance: MainActivity? = null
 
         fun onLiveTransactionCaptured(txnMap: HashMap<String, Any>) {
@@ -65,7 +65,8 @@ class MainActivity : FlutterActivity() {
                 "date" to date,
                 "body" to body,
                 "source" to source,
-                "sender" to sender
+                "sender" to sender,
+                "id" to INTENT_TXN_ID
             ).apply {
                 if (sentAtMs > 0) put("sentAtMs", sentAtMs)
                 if (receivedAtMs > 0) put("receivedAtMs", receivedAtMs)
@@ -89,8 +90,14 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                 }
+                "removePendingTransactions" -> {
+                    val ids = call.argument<List<String>>("ids") ?: emptyList()
+                    removePendingTransactions(ids)
+                    result.success(true)
+                }
+                // Kept for older Dart builds; removes only what is currently queued.
                 "clearPendingTransactions" -> {
-                    clearPendingTransactions()
+                    removePendingTransactions(getPendingTransactionsList().mapNotNull { it["id"] as? String })
                     result.success(true)
                 }
                 else -> {
@@ -101,64 +108,35 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getPendingTransactionsList(): List<HashMap<String, Any>> {
-        val resultList = ArrayList<HashMap<String, Any>>()
+        val resultList = ArrayList(PendingSmsStore.list(this))
 
-        // 1. Read from SharedPreferences
-        val prefs = getSharedPreferences("fiscora_sms_prefs", Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString("pending_transactions", "[]") ?: "[]"
-        try {
-            val jsonArray = JSONArray(jsonStr)
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val map = HashMap<String, Any>()
-                val keys = obj.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    when (val value = obj.get(key)) {
-                        is Double -> map[key] = value
-                        is Long -> map[key] = value
-                        is Int -> map[key] = if (key.endsWith("AtMs")) value.toLong() else value.toDouble()
-                        is Boolean -> map[key] = value
-                        else -> map[key] = value.toString()
-                    }
-                }
-                resultList.add(map)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 2. Add single intent pending transaction if present
+        // A notification tap carries the transaction too; it is normally already queued.
         pendingIntentTransaction?.let { intentTxn ->
             val exists = resultList.any {
-                (it["body"] == intentTxn["body"] && it["sender"] == intentTxn["sender"]) ||
-                (it["amount"] == intentTxn["amount"] &&
-                    it["merchant"] == intentTxn["merchant"] &&
-                    it["date"] == intentTxn["date"])
+                it["body"] == intentTxn["body"] && it["sender"] == intentTxn["sender"]
             }
-            if (!exists) {
-                resultList.add(intentTxn)
-            }
+            if (!exists) resultList.add(intentTxn)
         }
-
         return resultList
     }
 
-    private fun clearPendingTransactions() {
-        val prefs = getSharedPreferences("fiscora_sms_prefs", Context.MODE_PRIVATE)
-        prefs.edit().remove("pending_transactions").apply()
-        pendingIntentTransaction = null
+    private fun removePendingTransactions(ids: Collection<String>) {
+        PendingSmsStore.remove(this, ids)
+        if (INTENT_TXN_ID in ids) pendingIntentTransaction = null
+        // The intent copy is a duplicate once its queued twin has been handled.
+        pendingIntentTransaction?.let { intentTxn ->
+            if (PendingSmsStore.list(this).none { it["body"] == intentTxn["body"] }) {
+                pendingIntentTransaction = null
+            }
+        }
     }
 
+    // Items stay queued until Dart acknowledges them via removePendingTransactions.
     private fun sendPendingTransactionToFlutter() {
         flutterEngine?.let { engine ->
-            val list = getPendingTransactionsList()
-            if (list.isNotEmpty()) {
-                for (txn in list) {
-                    MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
-                        .invokeMethod("onTransactionCaptured", txn)
-                }
-                clearPendingTransactions()
+            for (txn in getPendingTransactionsList()) {
+                MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
+                    .invokeMethod("onTransactionCaptured", txn)
             }
         }
     }

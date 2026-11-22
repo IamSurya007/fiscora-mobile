@@ -89,4 +89,21 @@ class IsarUserRepository implements IUserRepository {
       }
     });
   }
+
+  @override
+  Future<bool> isOnboarded(String uid) async {
+    final profile = _isar.userProfileCollections.where().uidEqualTo(uid).findFirst();
+    return profile?.onboardedAt != null;
+  }
+
+  @override
+  Future<void> markOnboarded(String uid) async {
+    await _isar.writeAsync((isar) {
+      final profile = isar.userProfileCollections.where().uidEqualTo(uid).findFirst();
+      if (profile != null && profile.onboardedAt == null) {
+        profile.onboardedAt = DateTime.now().toUtc();
+        isar.userProfileCollections.put(profile);
+      }
+    });
+  }
 }

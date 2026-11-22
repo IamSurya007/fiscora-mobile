@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:isar_plus/isar_plus.dart';
 import '../../../../features/loans/models/loan_model.dart';
 import '../sync_metadata.dart';
@@ -17,6 +19,16 @@ class LoanCollection with SyncMetadataMixin {
   late String status; // active | paid | overdue
   late String notes;
   late DateTime createdAt;
+
+  // EMI (all optional; older rows read as a plain loan)
+  bool isEmi = false;
+  double? emiAmount;
+  int? tenureMonths;
+  DateTime? emiStartDate;
+  int? emiDayOfMonth;
+
+  /// Repayment log as a JSON array of {id, date, amount, note}.
+  String repaymentsJson = '[]';
 
   LoanCollection();
 
@@ -38,7 +50,14 @@ class LoanCollection with SyncMetadataMixin {
       ..repaymentDate = loan.repaymentDate
       ..status = loan.status
       ..notes = loan.notes
-      ..createdAt = loan.createdAt;
+      ..createdAt = loan.createdAt
+      ..isEmi = loan.isEmi
+      ..emiAmount = loan.emiAmount
+      ..tenureMonths = loan.tenureMonths
+      ..emiStartDate = loan.emiStartDate
+      ..emiDayOfMonth = loan.emiDayOfMonth
+      ..repaymentsJson =
+          jsonEncode(loan.repayments.map((r) => r.toJson()).toList());
 
     col.clientId = loan.id;
     col.serverId = serverId;
@@ -63,8 +82,26 @@ class LoanCollection with SyncMetadataMixin {
       status: status,
       notes: notes,
       createdAt: createdAt,
+      isEmi: isEmi,
+      emiAmount: emiAmount,
+      tenureMonths: tenureMonths,
+      emiStartDate: emiStartDate,
+      emiDayOfMonth: emiDayOfMonth,
+      repayments: Loan.parseRepayments(_decodeRepayments()),
     );
   }
+
+  dynamic _decodeRepayments() {
+    try {
+      return jsonDecode(repaymentsJson);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static String? _dateOnly(DateTime? d) => d == null
+      ? null
+      : "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
   Map<String, dynamic> toSyncJson() {
     return {
@@ -79,6 +116,12 @@ class LoanCollection with SyncMetadataMixin {
       'status': status.toUpperCase(), // backend expect: ACTIVE | PAID | OVERDUE | PARTIAL
       'notes': notes,
       'createdAt': createdAt.toUtc().toIso8601String(),
+      'isEmi': isEmi,
+      'emiAmount': emiAmount,
+      'tenureMonths': tenureMonths,
+      'emiStartDate': _dateOnly(emiStartDate),
+      'emiDayOfMonth': emiDayOfMonth,
+      'repayments': _decodeRepayments(),
     };
   }
 }

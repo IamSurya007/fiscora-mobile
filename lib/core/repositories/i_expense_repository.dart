@@ -30,6 +30,9 @@ abstract interface class IExpenseRepository {
   Future<void> updateExpense(Expense expense);
   Future<void> deleteExpense(String id);
 
+  /// Marks auto-captured transactions as reviewed (removes them from the inbox).
+  Future<void> approveExpenses(List<String> ids);
+
   /// Budget limits per category for [month] (format: 'yyyy-MM').
   Future<Map<String, Map<String, dynamic>>> getBudgetForMonth(String month);
   Future<void> setBudgetForMonth(
@@ -40,5 +43,11 @@ abstract interface class IExpenseRepository {
   /// Auto-categorization rule operations
   Future<void> setMerchantRule(String merchant, CategorySelection selection);
   Future<CategorySelection?> getMerchantRule(String merchant);
+
+  /// Merchant -> category rules the app learned, sorted by merchant.
+  Stream<List<({String merchant, CategorySelection selection})>> watchMerchantRules();
+
+  /// Forgets the rule for [merchant]; future captures fall back to the guess.
+  Future<void> deleteMerchantRule(String merchant);
   Future<void> updateExpensesCategory(String merchant, CategorySelection selection);
 }

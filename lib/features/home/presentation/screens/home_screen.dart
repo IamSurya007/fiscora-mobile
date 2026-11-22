@@ -7,6 +7,7 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/widgets/transaction_tile.dart';
 import '../../../expenses/screens/add_expense_sheet.dart';
 import '../../../expenses/screens/sms_scan_sheet.dart';
+import '../../../expenses/screens/review_inbox_screen.dart';
 import '../../../loans/screens/add_loan_sheet.dart';
 import '../../../investments/screens/add_investment_sheet.dart';
 import '../../../expenses/services/expense_providers.dart';
@@ -15,8 +16,10 @@ import '../../../investments/services/investment_providers.dart';
 import '../../../../core/services/excel_export_service.dart';
 import '../../../accounts/presentation/widgets/accounts_carousel.dart';
 import '../../../ai_chat/screens/spendly_ai_chat_screen.dart';
+import '../../../networth/presentation/widgets/net_worth_card.dart';
 import '../widgets/balance_card.dart';
 import '../widgets/quick_actions.dart';
+import '../../../../core/services/amount_privacy.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final User user;
@@ -120,6 +123,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ],
                       ),
                     ),
+                    // Hide amounts (privacy mode)
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final hidden = ref.watch(hideAmountsProvider);
+                        return IconButton(
+                          tooltip: hidden ? 'Show amounts' : 'Hide amounts',
+                          icon: Icon(
+                            hidden ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            color: AppColors.primaryNavy,
+                          ),
+                          onPressed: () => ref.read(hideAmountsProvider.notifier).state = !hidden,
+                        );
+                      },
+                    ),
                     // AI Assistant Sparkle Button
                     GestureDetector(
                       onTap: () {
@@ -185,6 +202,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             SliverToBoxAdapter(
               child: BalanceCard(user: widget.user),
             ),
+
+            // ── Review inbox banner (only when something needs a look) ──
+            const SliverToBoxAdapter(child: _ReviewBanner()),
+
+            // ── Net worth ─────────────────────────────
+            const SliverToBoxAdapter(child: NetWorthCard()),
   
             const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
 
@@ -352,4 +375,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ),
   );
 }
+}
+
+/// "N transactions to review" shortcut into the review inbox.
+class _ReviewBanner extends ConsumerWidget {
+  const _ReviewBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(reviewQueueProvider).length;
+    if (count == 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.screenPadding, AppSpacing.md, AppSpacing.screenPadding, 0),
+      child: Material(
+        color: AppColors.accent.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ReviewInboxScreen()),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.inbox_rounded, color: AppColors.accent),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '$count transaction${count == 1 ? '' : 's'} to review',
+                    style: AppTextStyles.labelBold,
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.accent),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
